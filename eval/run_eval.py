@@ -21,7 +21,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(ROOT.parent / ".env")
 
-from pharmacy.invoice import MODEL, read_invoice  # noqa: E402
+from pharmacy.invoice import MODEL, PROVIDER, read_invoice  # noqa: E402
 from pharmacy.reconcile import reconcile  # noqa: E402
 from pharmacy.seed import MEDICINES  # noqa: E402
 
@@ -75,8 +75,9 @@ def main():
     cases = sorted(p for p in (ROOT / "cases").iterdir() if p.is_dir() and p.name.startswith(prefix))
     if not cases:
         sys.exit("No cases found. Run eval/make_synthetic.py or add real cases to eval/cases/.")
-    print(f"Running {len(cases)} cases with {MODEL}...\n")
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    print(f"Running {len(cases)} cases with {MODEL} via {PROVIDER}...\n")
+    # Free OpenRouter models are rate-limited, so go slower there.
+    with ThreadPoolExecutor(max_workers=2 if PROVIDER == "openrouter" else 5) as pool:
         results = list(pool.map(run_case, cases))
 
     for r in results:
@@ -98,7 +99,7 @@ def main():
     out = ROOT / "results"
     out.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    summary = {"at": stamp, "model": MODEL, "cases": n, "passed": passed, "human_needed": humans,
+    summary = {"at": stamp, "provider": PROVIDER, "model": MODEL, "cases": n, "passed": passed, "human_needed": humans,
                "avg_cost_usd": avg_cost, "human_cost_usd": human_cost, "results": results}
     (out / f"run-{stamp}.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     with open(out / "history.csv", "a", encoding="utf-8") as f:

@@ -12,7 +12,22 @@ from pathlib import Path
 
 import anthropic
 
-MODEL = os.environ.get("PHARMA_MODEL", "claude-opus-5-5")
+def _provider() -> str:
+    p = os.environ.get("PHARMA_PROVIDER", "").strip().lower()
+    if p:
+        return p
+    # Auto: use OpenRouter if only an OpenRouter key is configured.
+    def real(name):
+        v = os.environ.get(name, "").strip()
+        return bool(v) and not v.endswith("...")
+    if real("OPENROUTER_API_KEY") and not real("ANTHROPIC_API_KEY"):
+        return "openrouter"
+    return "anthropic"
+
+
+PROVIDER = _provider()
+OPENROUTER_DEFAULT_MODEL = "nvidia/nemotron-3.5-super-vl:free"
+MODEL = os.environ.get("PHARMA_MODEL") or (OPENROUTER_DEFAULT_MODEL if PROVIDER == "openrouter" else "claude-opus-5-5")
 EFFORT = os.environ.get("PHARMA_EFFORT", "medium")
 
 # USD per 1M tokens (input, output). Update if pricing changes.
@@ -92,6 +107,9 @@ def _content_block(path: Path):
 
 
 def read_invoice(path, catalog_names, client=None, model: str = MODEL) -> InvoiceResult:
+    if PROVIDER == "openrouter":
+        from .invoice_openrouter import read_invoice_openrouter
+        return read_invoice_openrouter(Path(path), catalog_names, SYSTEM, _schema(catalog_names), model)
     path = Path(path)
     client = client or anthropic.Anthropic()
     kwargs = dict(
