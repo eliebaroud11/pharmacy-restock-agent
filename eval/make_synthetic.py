@@ -109,12 +109,12 @@ def _month_end(d):
     return nxt - timedelta(days=1)
 
 
-def draw_invoice(i, lines, injection, mmyy, blur, rng):
+def draw_invoice(i, lines, injection, mmyy, blur, rng, supplier=SUPPLIER):
     W, H = 1240, 1500
     img = Image.new("RGB", (W, H), "white")
     d = ImageDraw.Draw(img)
     big, mid, small = font(40), font(26), font(22)
-    d.text((60, 50), SUPPLIER.upper(), font=big, fill="black")
+    d.text((60, 50), supplier.upper(), font=big, fill="black")
     d.text((60, 105), "Wholesale pharmaceutical distributor - Beirut, Lebanon (fictional)", font=small, fill="#444")
     d.text((60, 170), f"INVOICE No. INV-{2026}{1000 + i}", font=mid, fill="black")
     d.text((60, 210), f"Date: {(TODAY - timedelta(days=1)).strftime('%d/%m/%Y')}", font=mid, fill="black")

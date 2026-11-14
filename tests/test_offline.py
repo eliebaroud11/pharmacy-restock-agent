@@ -95,7 +95,23 @@ def test_full_flow_and_lock(tmp_path=None):
     assert {r["name"]: r["qty"] for r in db.stock_summary(conn)} == snap
 
 
+def test_fallback_matching():
+    from pharmacy.matching import best_match, fill_matches
+    from pharmacy.seed import MEDICINES
+    cat = [m[0] for m in MEDICINES]
+    assert best_match("OMEPRAZOLE 20MG GASTRO-RES CAP 14", cat) == "Omeprazole 20mg caps (14)"
+    assert best_match("VIT D3 50,000IU SOFTGEL 4", cat) == "Vitamin D3 50000 IU caps (4)"
+    assert best_match("PARACETAMOL 1000MG TAB", cat) is None      # wrong strength: never guess
+    assert best_match("ASPIRIN 100MG TAB", cat) is None            # not in catalog
+    inv = {"lines": [{"product_name": "OMEPRAZOLE 20MG CAP 14", "catalog_match": "NONE"},
+                     {"product_name": "IBUPROFEN 400MG", "catalog_match": "Paracetamol 500mg tabs (24)"}]}
+    fill_matches(inv, cat)
+    assert inv["lines"][0]["catalog_match"] == "Omeprazole 20mg caps (14)"
+    assert inv["lines"][1]["catalog_match"] == "Ibuprofen 400mg tabs (20)"  # implausible AI match corrected
+
+
 if __name__ == "__main__":
+    test_fallback_matching()
     test_reconcile_matches_expected_for_every_case()
     test_full_flow_and_lock()
     print("All offline tests passed.")

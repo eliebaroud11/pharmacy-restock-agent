@@ -11,7 +11,7 @@ load_dotenv()
 from pharmacy import db, orders  # noqa: E402
 from pharmacy.alerts import find_alerts  # noqa: E402
 from pharmacy.invoice import read_invoice  # noqa: E402
-from pharmacy.receive import check_delivery, receive_delivery  # noqa: E402
+from pharmacy.receive import receive_delivery  # noqa: E402
 from pharmacy.seed import seed  # noqa: E402
 
 st.set_page_config(page_title="Pharmacy Restock Agent", page_icon="💊", layout="wide")
@@ -119,47 +119,62 @@ with tab_receive:
         order, lines = db.order_with_lines(conn, choice["id"])
         st.table([{"Medicine": l["name"], "Ordered": l["qty"]} for l in lines])
         confirmed = st.checkbox("I checked the boxes: the batch matches this order", key=f"bc{order['id']}")
-        upload = st.file_uploader("Photo or PDF of the invoice", type=["jpg", "jpeg", "png", "webp", "pdf"],
-                                  disabled=not confirmed, key=f"up{order['id']}")
-        if upload and st.button("Read invoice", type="primary", disabled=not pharmacist):
+        ready = confirmed and bool(pharmacist)
+        upload = st.file_uploader("Photo or PDF of the invoice: the agent reads it and updates stock if it matches",
+                                  type=["jpg", "jpeg", "png", "webp", "pdf"], disabled=not ready, key=f"up{order['id']}")
+        if not pharmacist:
+            st.caption("Enter your name in the sidebar first.")
+
+        # A new upload is processed once: read -> check -> stock updated on an exact match, else flagged.
+        file_key = f"{order['id']}:{upload.file_id}" if upload is not None else None
+        if upload is not None and ready and st.session_state.get("processed") != file_key:
+            st.session_state["processed"] = file_key
             catalog = [r["name"] for r in conn.execute("SELECT name FROM medicines ORDER BY name")]
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(upload.name).suffix) as f:
                 f.write(upload.getbuffer())
-            with st.spinner("Reading the invoice..."):
+            with st.spinner("Reading the invoice and checking it against the order..."):
                 res = read_invoice(f.name, catalog)
             Path(f.name).unlink(missing_ok=True)
             if res.error:
-                st.error(res.error)
+                st.session_state["receipt"] = {"order_id": order["id"], "error": res.error}
             else:
-                st.session_state[f"inv{order['id']}"] = res.data
-                st.caption(f"Read with {res.model} · {res.input_tokens + res.output_tokens} tokens · ${res.cost_usd:.4f}")
+                result = receive_delivery(conn, order["id"], res.data, pharmacist, confirmed)
+                st.session_state["receipt"] = {
+                    "order_id": order["id"], "invoice": res.data, "result": result,
+                    "meta": f"Read with {res.model} · {res.input_tokens + res.output_tokens} tokens · ${res.cost_usd:.4f}",
+                }
+            st.rerun()
 
-        inv = st.session_state.get(f"inv{order['id']}")
-        if inv:
-            st.markdown(f"**Invoice {inv.get('invoice_number') or '?'}** from {inv.get('supplier_name') or '?'}, "
-                        f"dated {inv.get('invoice_date') or '?'}")
+    # Result of the last upload (shown even after the order leaves the waiting list).
+    rec = st.session_state.get("receipt")
+    if rec:
+        st.divider()
+        if rec.get("error"):
+            st.error(f"Order #{rec['order_id']}: could not read the invoice. {rec['error']}")
+        else:
+            inv, result = rec["invoice"], rec["result"]
+            st.markdown(f"**Order #{rec['order_id']} · invoice {inv.get('invoice_number') or '?'}** from "
+                        f"{inv.get('supplier_name') or '?'}, dated {inv.get('invoice_date') or '?'}")
             st.table([{"Item": l["product_name"], "Matched to": l["catalog_match"], "Batch": l["batch_no"],
                        "Expiry": l["expiry"], "Qty": l["qty"]} for l in inv.get("lines", [])])
-            check = check_delivery(conn, order["id"], inv)
-            if check["status"] == "match":
-                st.success("Invoice matches the order exactly.")
-                if st.button("Add to stock", type="primary", key=f"add{order['id']}"):
-                    receive_delivery(conn, order["id"], inv, pharmacist, confirmed)
-                    st.session_state.pop(f"inv{order['id']}", None)
-                    st.success("Stock updated.")
-                    st.rerun()
+            if result.get("applied"):
+                added = ", ".join(f"{r['name']} +{r['qty']}" for r in result["receive"])
+                st.success(f"✅ Invoice matches the order. Stock updated automatically: {added}.")
             else:
-                st.error("The invoice does not match the order:")
-                for i in check["issues"]:
+                st.error("⚠️ The invoice does not match the order. Stock was NOT changed; the order is marked "
+                         "'needs review'.")
+                for i in result["issues"]:
                     st.markdown(f"- **{i['type'].replace('_', ' ')}**: {i['detail']}")
-                c1, c2 = st.columns(2)
-                if c1.button("Flag for follow-up with supplier", key=f"fl{order['id']}"):
-                    receive_delivery(conn, order["id"], inv, pharmacist, confirmed)
-                    st.rerun()
-                if c2.button("Accept anyway and add what was delivered", key=f"acc{order['id']}", disabled=not pharmacist):
-                    receive_delivery(conn, order["id"], inv, pharmacist, confirmed, accept_discrepancies=True)
-                    st.session_state.pop(f"inv{order['id']}", None)
-                    st.rerun()
+                still_open = conn.execute("SELECT status FROM orders WHERE id = ?", (rec["order_id"],)).fetchone()
+                if still_open and still_open["status"] == "needs_review" and pharmacist:
+                    if st.button("Accept anyway and add what was delivered", key=f"acc{rec['order_id']}"):
+                        res2 = receive_delivery(conn, rec["order_id"], inv, pharmacist, True, accept_discrepancies=True)
+                        st.session_state["receipt"] = {**rec, "result": res2}
+                        st.rerun()
+            st.caption(rec["meta"])
+        if st.button("Clear", key="clear_receipt"):
+            st.session_state.pop("receipt", None)
+            st.rerun()
 
 # ---------------- Stock ----------------
 with tab_stock:

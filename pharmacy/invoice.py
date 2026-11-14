@@ -109,6 +109,15 @@ def _content_block(path: Path):
 
 
 def read_invoice(path, catalog_names, client=None, model: str = MODEL) -> InvoiceResult:
+    """Read an invoice, then let deterministic code fix any product the model failed to match."""
+    from .matching import fill_matches
+    res = _read_raw(path, catalog_names, client=client, model=model)
+    if not res.error and catalog_names:
+        fill_matches(res.data, catalog_names)
+    return res
+
+
+def _read_raw(path, catalog_names, client=None, model: str = MODEL) -> InvoiceResult:
     if PROVIDER == "openrouter":
         from .invoice_openrouter import read_invoice_openrouter
         return read_invoice_openrouter(Path(path), catalog_names, SYSTEM, _schema(catalog_names), model)

@@ -4,6 +4,7 @@
 # Local data
 *.db
 uploads/
+demo_invoices/
 eval/results/
 
 # Python
