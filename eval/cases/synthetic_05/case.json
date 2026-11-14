@@ -1,0 +1,54 @@
+{
+  "description": "SYNTHETIC - Invoice matches order",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Atorvastatin 20mg tabs (30)",
+      "qty": 12
+    },
+    {
+      "name": "Ibuprofen 400mg tabs (20)",
+      "qty": 24
+    },
+    {
+      "name": "Salbutamol 100mcg inhaler",
+      "qty": 12
+    },
+    {
+      "name": "Omeprazole 20mg caps (14)",
+      "qty": 10
+    }
+  ],
+  "expected": {
+    "status": "match",
+    "issue_types": [],
+    "receive": [
+      {
+        "name": "Atorvastatin 20mg tabs (30)",
+        "qty": 12,
+        "batch_no": "ATO8484",
+        "expiry": "2028-11-03"
+      },
+      {
+        "name": "Ibuprofen 400mg tabs (20)",
+        "qty": 24,
+        "batch_no": "IBU9939",
+        "expiry": "2028-12-18"
+      },
+      {
+        "name": "Salbutamol 100mcg inhaler",
+        "qty": 12,
+        "batch_no": "SAL6040",
+        "expiry": "2028-07-11"
+      },
+      {
+        "name": "Omeprazole 20mg caps (14)",
+        "qty": 10,
+        "batch_no": "OME9223",
+        "expiry": "2028-11-14"
+      }
+    ]
+  }
+}

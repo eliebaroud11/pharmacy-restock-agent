@@ -1,0 +1,54 @@
+{
+  "description": "SYNTHETIC - Invoice matches order",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Atorvastatin 20mg tabs (30)",
+      "qty": 30
+    },
+    {
+      "name": "Ibuprofen 400mg tabs (20)",
+      "qty": 30
+    },
+    {
+      "name": "Amlodipine 5mg tabs (30)",
+      "qty": 20
+    },
+    {
+      "name": "Paracetamol 500mg tabs (24)",
+      "qty": 20
+    }
+  ],
+  "expected": {
+    "status": "match",
+    "issue_types": [],
+    "receive": [
+      {
+        "name": "Atorvastatin 20mg tabs (30)",
+        "qty": 30,
+        "batch_no": "ATO3308",
+        "expiry": "2028-08-09"
+      },
+      {
+        "name": "Ibuprofen 400mg tabs (20)",
+        "qty": 30,
+        "batch_no": "IBU6062",
+        "expiry": "2028-12-13"
+      },
+      {
+        "name": "Amlodipine 5mg tabs (30)",
+        "qty": 20,
+        "batch_no": "AML7043",
+        "expiry": "2028-12-16"
+      },
+      {
+        "name": "Paracetamol 500mg tabs (24)",
+        "qty": 20,
+        "batch_no": "PAR2485",
+        "expiry": "2028-07-22"
+      }
+    ]
+  }
+}

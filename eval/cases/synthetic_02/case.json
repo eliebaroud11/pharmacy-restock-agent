@@ -1,0 +1,54 @@
+{
+  "description": "SYNTHETIC - Invoice matches order",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Cetirizine 10mg tabs (20)",
+      "qty": 30
+    },
+    {
+      "name": "Vitamin D3 50000 IU caps (4)",
+      "qty": 10
+    },
+    {
+      "name": "Omeprazole 20mg caps (14)",
+      "qty": 10
+    },
+    {
+      "name": "Paracetamol 500mg tabs (24)",
+      "qty": 20
+    }
+  ],
+  "expected": {
+    "status": "match",
+    "issue_types": [],
+    "receive": [
+      {
+        "name": "Cetirizine 10mg tabs (20)",
+        "qty": 30,
+        "batch_no": "CET2606",
+        "expiry": "2029-02-09"
+      },
+      {
+        "name": "Vitamin D3 50000 IU caps (4)",
+        "qty": 10,
+        "batch_no": "VIT9032",
+        "expiry": "2029-02-08"
+      },
+      {
+        "name": "Omeprazole 20mg caps (14)",
+        "qty": 10,
+        "batch_no": "OME7508",
+        "expiry": "2028-04-04"
+      },
+      {
+        "name": "Paracetamol 500mg tabs (24)",
+        "qty": 20,
+        "batch_no": "PAR6843",
+        "expiry": "2029-04-07"
+      }
+    ]
+  }
+}

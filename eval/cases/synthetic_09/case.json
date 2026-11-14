@@ -1,0 +1,34 @@
+{
+  "description": "SYNTHETIC - Expiry printed as MM/YYYY",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Ibuprofen 400mg tabs (20)",
+      "qty": 24
+    },
+    {
+      "name": "Paracetamol 500mg tabs (24)",
+      "qty": 30
+    }
+  ],
+  "expected": {
+    "status": "match",
+    "issue_types": [],
+    "receive": [
+      {
+        "name": "Ibuprofen 400mg tabs (20)",
+        "qty": 24,
+        "batch_no": "IBU2360",
+        "expiry": "2028-09-30"
+      },
+      {
+        "name": "Paracetamol 500mg tabs (24)",
+        "qty": 30,
+        "batch_no": "PAR5060",
+        "expiry": "2028-03-31"
+      }
+    ]
+  }
+}

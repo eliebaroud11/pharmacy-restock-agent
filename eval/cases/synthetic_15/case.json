@@ -1,0 +1,56 @@
+{
+  "description": "SYNTHETIC - Extra item not ordered",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Amoxicillin 500mg caps (16)",
+      "qty": 20
+    },
+    {
+      "name": "Vitamin D3 50000 IU caps (4)",
+      "qty": 24
+    },
+    {
+      "name": "Atorvastatin 20mg tabs (30)",
+      "qty": 30
+    },
+    {
+      "name": "Omeprazole 20mg caps (14)",
+      "qty": 24
+    }
+  ],
+  "expected": {
+    "status": "needs_review",
+    "issue_types": [
+      "not_ordered"
+    ],
+    "receive": [
+      {
+        "name": "Amoxicillin 500mg caps (16)",
+        "qty": 20,
+        "batch_no": "AMO2288",
+        "expiry": "2029-03-07"
+      },
+      {
+        "name": "Vitamin D3 50000 IU caps (4)",
+        "qty": 24,
+        "batch_no": "VIT6637",
+        "expiry": "2028-03-23"
+      },
+      {
+        "name": "Atorvastatin 20mg tabs (30)",
+        "qty": 30,
+        "batch_no": "ATO9152",
+        "expiry": "2028-08-12"
+      },
+      {
+        "name": "Omeprazole 20mg caps (14)",
+        "qty": 24,
+        "batch_no": "OME7811",
+        "expiry": "2029-02-08"
+      }
+    ]
+  }
+}

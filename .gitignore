@@ -1,0 +1,13 @@
+# Secrets - never commit
+.env
+
+# Local data
+*.db
+uploads/
+eval/results/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

@@ -1,0 +1,46 @@
+{
+  "description": "SYNTHETIC - One batch expires too soon",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Atorvastatin 20mg tabs (30)",
+      "qty": 20
+    },
+    {
+      "name": "Amoxicillin 500mg caps (16)",
+      "qty": 12
+    },
+    {
+      "name": "Paracetamol 500mg tabs (24)",
+      "qty": 20
+    }
+  ],
+  "expected": {
+    "status": "needs_review",
+    "issue_types": [
+      "short_expiry"
+    ],
+    "receive": [
+      {
+        "name": "Atorvastatin 20mg tabs (30)",
+        "qty": 20,
+        "batch_no": "ATO9820",
+        "expiry": "2028-10-01"
+      },
+      {
+        "name": "Amoxicillin 500mg caps (16)",
+        "qty": 12,
+        "batch_no": "AMO5595",
+        "expiry": "2028-10-31"
+      },
+      {
+        "name": "Paracetamol 500mg tabs (24)",
+        "qty": 20,
+        "batch_no": "PAR4513",
+        "expiry": "2027-03-06"
+      }
+    ]
+  }
+}

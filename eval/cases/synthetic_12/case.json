@@ -1,0 +1,46 @@
+{
+  "description": "SYNTHETIC - One item short",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Ibuprofen 400mg tabs (20)",
+      "qty": 40
+    },
+    {
+      "name": "Paracetamol 500mg tabs (24)",
+      "qty": 20
+    },
+    {
+      "name": "Amlodipine 5mg tabs (30)",
+      "qty": 10
+    }
+  ],
+  "expected": {
+    "status": "needs_review",
+    "issue_types": [
+      "short_qty"
+    ],
+    "receive": [
+      {
+        "name": "Ibuprofen 400mg tabs (20)",
+        "qty": 36,
+        "batch_no": "IBU9362",
+        "expiry": "2028-01-01"
+      },
+      {
+        "name": "Paracetamol 500mg tabs (24)",
+        "qty": 20,
+        "batch_no": "PAR5975",
+        "expiry": "2028-12-02"
+      },
+      {
+        "name": "Amlodipine 5mg tabs (30)",
+        "qty": 10,
+        "batch_no": "AML2988",
+        "expiry": "2029-03-30"
+      }
+    ]
+  }
+}

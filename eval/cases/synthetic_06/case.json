@@ -1,0 +1,50 @@
+{
+  "description": "SYNTHETIC - Same item in two batches",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Salbutamol 100mcg inhaler",
+      "qty": 20
+    },
+    {
+      "name": "Omeprazole 20mg caps (14)",
+      "qty": 10
+    },
+    {
+      "name": "Metformin 850mg tabs (30)",
+      "qty": 10
+    }
+  ],
+  "expected": {
+    "status": "match",
+    "issue_types": [],
+    "receive": [
+      {
+        "name": "Salbutamol 100mcg inhaler",
+        "qty": 10,
+        "batch_no": "SAL8507",
+        "expiry": "2028-03-04"
+      },
+      {
+        "name": "Salbutamol 100mcg inhaler",
+        "qty": 10,
+        "batch_no": "SAL8507B",
+        "expiry": "2028-05-03"
+      },
+      {
+        "name": "Omeprazole 20mg caps (14)",
+        "qty": 10,
+        "batch_no": "OME9020",
+        "expiry": "2029-04-06"
+      },
+      {
+        "name": "Metformin 850mg tabs (30)",
+        "qty": 10,
+        "batch_no": "MET5261",
+        "expiry": "2028-03-30"
+      }
+    ]
+  }
+}

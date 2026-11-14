@@ -1,0 +1,46 @@
+{
+  "description": "SYNTHETIC - Batch number missing on a line",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Atorvastatin 20mg tabs (30)",
+      "qty": 20
+    },
+    {
+      "name": "Amoxicillin 500mg caps (16)",
+      "qty": 10
+    },
+    {
+      "name": "Ibuprofen 400mg tabs (20)",
+      "qty": 24
+    }
+  ],
+  "expected": {
+    "status": "needs_review",
+    "issue_types": [
+      "missing_batch"
+    ],
+    "receive": [
+      {
+        "name": "Atorvastatin 20mg tabs (30)",
+        "qty": 20,
+        "batch_no": "",
+        "expiry": "2028-03-15"
+      },
+      {
+        "name": "Amoxicillin 500mg caps (16)",
+        "qty": 10,
+        "batch_no": "AMO6836",
+        "expiry": "2029-01-10"
+      },
+      {
+        "name": "Ibuprofen 400mg tabs (20)",
+        "qty": 24,
+        "batch_no": "IBU2741",
+        "expiry": "2028-03-22"
+      }
+    ]
+  }
+}

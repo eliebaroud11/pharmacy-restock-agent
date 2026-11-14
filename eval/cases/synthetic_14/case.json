@@ -1,0 +1,36 @@
+{
+  "description": "SYNTHETIC - One item over-delivered",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Cetirizine 10mg tabs (20)",
+      "qty": 24
+    },
+    {
+      "name": "Omeprazole 20mg caps (14)",
+      "qty": 40
+    }
+  ],
+  "expected": {
+    "status": "needs_review",
+    "issue_types": [
+      "over_qty"
+    ],
+    "receive": [
+      {
+        "name": "Cetirizine 10mg tabs (20)",
+        "qty": 30,
+        "batch_no": "CET1335",
+        "expiry": "2028-11-30"
+      },
+      {
+        "name": "Omeprazole 20mg caps (14)",
+        "qty": 40,
+        "batch_no": "OME4583",
+        "expiry": "2028-09-15"
+      }
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "description": "SYNTHETIC - Same item in two batches",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Atorvastatin 20mg tabs (30)",
+      "qty": 30
+    },
+    {
+      "name": "Cetirizine 10mg tabs (20)",
+      "qty": 40
+    },
+    {
+      "name": "Salbutamol 100mcg inhaler",
+      "qty": 10
+    }
+  ],
+  "expected": {
+    "status": "match",
+    "issue_types": [],
+    "receive": [
+      {
+        "name": "Atorvastatin 20mg tabs (30)",
+        "qty": 15,
+        "batch_no": "ATO5752",
+        "expiry": "2029-02-16"
+      },
+      {
+        "name": "Atorvastatin 20mg tabs (30)",
+        "qty": 15,
+        "batch_no": "ATO5752B",
+        "expiry": "2029-04-17"
+      },
+      {
+        "name": "Cetirizine 10mg tabs (20)",
+        "qty": 40,
+        "batch_no": "CET2611",
+        "expiry": "2029-04-01"
+      },
+      {
+        "name": "Salbutamol 100mcg inhaler",
+        "qty": 10,
+        "batch_no": "SAL9440",
+        "expiry": "2028-12-19"
+      }
+    ]
+  }
+}

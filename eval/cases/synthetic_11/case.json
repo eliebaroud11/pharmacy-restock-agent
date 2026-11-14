@@ -1,0 +1,56 @@
+{
+  "description": "SYNTHETIC - One item short",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Omeprazole 20mg caps (14)",
+      "qty": 40
+    },
+    {
+      "name": "Cetirizine 10mg tabs (20)",
+      "qty": 30
+    },
+    {
+      "name": "Amoxicillin 500mg caps (16)",
+      "qty": 20
+    },
+    {
+      "name": "Metformin 850mg tabs (30)",
+      "qty": 10
+    }
+  ],
+  "expected": {
+    "status": "needs_review",
+    "issue_types": [
+      "short_qty"
+    ],
+    "receive": [
+      {
+        "name": "Omeprazole 20mg caps (14)",
+        "qty": 38,
+        "batch_no": "OME3623",
+        "expiry": "2028-07-19"
+      },
+      {
+        "name": "Cetirizine 10mg tabs (20)",
+        "qty": 30,
+        "batch_no": "CET6013",
+        "expiry": "2029-01-23"
+      },
+      {
+        "name": "Amoxicillin 500mg caps (16)",
+        "qty": 20,
+        "batch_no": "AMO3433",
+        "expiry": "2028-07-05"
+      },
+      {
+        "name": "Metformin 850mg tabs (30)",
+        "qty": 10,
+        "batch_no": "MET7160",
+        "expiry": "2028-03-28"
+      }
+    ]
+  }
+}

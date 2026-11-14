@@ -1,0 +1,34 @@
+{
+  "description": "SYNTHETIC - Invoice matches order",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Amlodipine 5mg tabs (30)",
+      "qty": 30
+    },
+    {
+      "name": "Atorvastatin 20mg tabs (30)",
+      "qty": 40
+    }
+  ],
+  "expected": {
+    "status": "match",
+    "issue_types": [],
+    "receive": [
+      {
+        "name": "Amlodipine 5mg tabs (30)",
+        "qty": 30,
+        "batch_no": "AML2681",
+        "expiry": "2029-03-03"
+      },
+      {
+        "name": "Atorvastatin 20mg tabs (30)",
+        "qty": 40,
+        "batch_no": "ATO7891",
+        "expiry": "2029-03-21"
+      }
+    ]
+  }
+}

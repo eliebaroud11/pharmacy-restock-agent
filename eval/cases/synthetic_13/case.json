@@ -1,0 +1,50 @@
+{
+  "description": "SYNTHETIC - One item missing",
+  "today": "2026-11-14",
+  "supplier": "Cedar Pharma Distribution",
+  "invoice_file": "invoice.jpg",
+  "order_lines": [
+    {
+      "name": "Vitamin D3 50000 IU caps (4)",
+      "qty": 30
+    },
+    {
+      "name": "Amoxicillin 500mg caps (16)",
+      "qty": 12
+    },
+    {
+      "name": "Atorvastatin 20mg tabs (30)",
+      "qty": 24
+    },
+    {
+      "name": "Metformin 850mg tabs (30)",
+      "qty": 30
+    }
+  ],
+  "expected": {
+    "status": "needs_review",
+    "issue_types": [
+      "missing_item"
+    ],
+    "receive": [
+      {
+        "name": "Vitamin D3 50000 IU caps (4)",
+        "qty": 30,
+        "batch_no": "VIT8517",
+        "expiry": "2028-06-08"
+      },
+      {
+        "name": "Amoxicillin 500mg caps (16)",
+        "qty": 12,
+        "batch_no": "AMO2138",
+        "expiry": "2028-11-30"
+      },
+      {
+        "name": "Atorvastatin 20mg tabs (30)",
+        "qty": 24,
+        "batch_no": "ATO4202",
+        "expiry": "2028-01-05"
+      }
+    ]
+  }
+}
