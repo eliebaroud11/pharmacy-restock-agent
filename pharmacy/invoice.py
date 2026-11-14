@@ -78,7 +78,9 @@ def _schema(catalog_names):
                     "type": "object",
                     "properties": {
                         "product_name": {"type": "string"},
-                        "catalog_match": {"type": "string", "enum": list(catalog_names) + ["NONE"]},
+                        # With no catalog (drafting a new test case), the model just repeats the product name.
+                        "catalog_match": ({"type": "string", "enum": list(catalog_names) + ["NONE"]}
+                                          if catalog_names else {"type": "string"}),
                         "batch_no": {"type": "string"},
                         "expiry": {"type": "string"},
                         "qty": {"type": "integer"},

@@ -48,9 +48,9 @@ def check(case, invoice_data):
 
 
 def run_case(cdir: Path):
-    case = json.loads((cdir / "case.json").read_text(encoding="utf-8"))
+    case = json.loads((cdir / "case.json").read_text(encoding="utf-8-sig"))
     t0 = time.time()
-    res = read_invoice(cdir / case["invoice_file"], CATALOG)
+    res = read_invoice(cdir / case["invoice_file"], case.get("catalog") or CATALOG)
     secs = time.time() - t0
     if res.error:
         return {"case": cdir.name, "passed": False, "human_needed": True, "problems": [res.error],
@@ -73,6 +73,12 @@ def run_case(cdir: Path):
 def main():
     prefix = sys.argv[1] if len(sys.argv) > 1 else ""
     cases = sorted(p for p in (ROOT / "cases").iterdir() if p.is_dir() and p.name.startswith(prefix))
+    unverified = [p.name for p in cases
+                  if json.loads((p / "case.json").read_text(encoding="utf-8-sig")).get("verified") is False]
+    if unverified:
+        print(f"Skipping {len(unverified)} unverified case(s) - check them, then set \"verified\": true: "
+              + ", ".join(unverified))
+        cases = [p for p in cases if p.name not in unverified]
     if not cases:
         sys.exit("No cases found. Run eval/make_synthetic.py or add real cases to eval/cases/.")
     print(f"Running {len(cases)} cases with {MODEL} via {PROVIDER}...\n")

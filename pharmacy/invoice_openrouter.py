@@ -47,7 +47,7 @@ def _normalise(data: dict, catalog_names) -> dict:
             qty = 0
         lines.append({
             "product_name": str(l.get("product_name") or ""),
-            "catalog_match": match if match in allowed else "NONE",
+            "catalog_match": (match if match in allowed else "NONE") if allowed else match,
             "batch_no": str(l.get("batch_no") or ""),
             "expiry": str(l.get("expiry") or ""),
             "qty": qty,
