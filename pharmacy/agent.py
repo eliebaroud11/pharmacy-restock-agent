@@ -225,6 +225,9 @@ def _loop_openrouter(ctx, guard, plan):
         extra = {"reasoning": {"enabled": False}} if os.environ.get("PHARMA_AGENT_REASONING") == "off" else {}
         resp = client.chat.completions.create(model=AGENT_MODEL, messages=messages, tools=tools, temperature=0,
                                               extra_body=extra)
+        if resp.usage:
+            pin, pout = PRICES.get(AGENT_MODEL, (0, 0))
+            plan.cost_usd += (resp.usage.prompt_tokens or 0) / 1e6 * pin + (resp.usage.completion_tokens or 0) / 1e6 * pout
         msg = resp.choices[0].message
         calls = msg.tool_calls or []
         if not calls:

@@ -35,7 +35,14 @@ PRICES = {
     "claude-opus-5-5": (4.00, 20.00),
     "claude-sonnet-5-5": (2.00, 10.00),
     "claude-haiku-5-5": (0.10, 0.50),
+    # Same models through OpenRouter (their listed prices; free models cost nothing)
+    "anthropic/claude-haiku-5.5": (0.10, 0.50),
+    "anthropic/claude-sonnet-5.5": (2.00, 10.00),
 }
+
+
+def price_for(model: str):
+    return PRICES.get(model, (0.0, 0.0))
 # Server-side refusal fallback is available on these models.
 FALLBACK_MODELS = {"claude-opus-5-5", "claude-sonnet-5-5"}
 

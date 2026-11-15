@@ -10,7 +10,7 @@ from pathlib import Path
 
 import openai
 
-from .invoice import MEDIA_TYPES, InvoiceResult, image_bytes
+from .invoice import MEDIA_TYPES, InvoiceResult, image_bytes, price_for
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -114,5 +114,6 @@ def read_invoice_openrouter(path: Path, catalog_names, system: str, schema: dict
     except (json.JSONDecodeError, AttributeError):
         return InvoiceResult(data={}, input_tokens=in_tok, output_tokens=out_tok, model=model,
                              error="Model did not return valid JSON.")
-    # Free models: $0. Paid OpenRouter models would need their own price here.
-    return InvoiceResult(data=data, input_tokens=in_tok, output_tokens=out_tok, cost_usd=0.0, model=model)
+    pin, pout = price_for(model)  # $0 for free models
+    cost = in_tok / 1e6 * pin + out_tok / 1e6 * pout
+    return InvoiceResult(data=data, input_tokens=in_tok, output_tokens=out_tok, cost_usd=cost, model=model)
