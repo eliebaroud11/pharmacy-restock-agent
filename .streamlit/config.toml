@@ -7,3 +7,15 @@ maxUploadSize = 10
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# Hide the developer menu and "Deploy" button.
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#137A59"
+backgroundColor = "#F6F8F5"
+secondaryBackgroundColor = "#E9EFEA"
+textColor = "#0F2E2C"
+font = "sans serif"
