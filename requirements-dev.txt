@@ -1,0 +1,4 @@
+# Security scanners (not needed to run the app)
+-r requirements.txt
+bandit
+pip-audit

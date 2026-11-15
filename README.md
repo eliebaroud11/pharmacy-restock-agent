@@ -41,12 +41,27 @@ Re-orders it drafts still need approval in the Orders tab. It never runs on an i
 - **Uploads are limited**: 10 MB, real images/PDFs only, no "decompression bomb" images over 50 megapixels.
 - **Reset is locked.** "Reset demo data" (which also clears the audit log) only exists with `PHARMA_DEMO=1` and needs a confirmation tick.
 - **Pinned dependencies** in `requirements.txt`.
+- **Sessions end immediately** when an account is deactivated or its password changes; the role is re-read from the
+  database on every page load, so editing session data can't grant admin rights.
+- **Admin rights are checked in code**, not just hidden in the screen. Sign-in attempts are throttled across all
+  accounts (20 failures a minute) to stop password spraying, with a 1-second delay on each failure.
+- **Hard limits:** order quantities 1-10,000, passwords 8-256 characters, names 80 characters, uploads 10 MB.
+- **Server settings:** cross-site request forgery protection on, no static file serving, no error details shown to users.
 - **Staff accounts.** Everyone signs in; approvals are recorded under the signed-in account. Passwords are stored only
   as salted scrypt hashes, must be 8+ characters, and 5 wrong attempts lock the account for 5 minutes. Sessions end
   after 30 minutes without activity. Logins, failures, lockouts and account changes are in the audit log.
   Administrators add or deactivate accounts (the last administrator can't be removed) (`pharmacy/auth.py`).
 - **Audit log.** Every agent and human action is recorded, with who did it.
 - The app only listens on `localhost`.
+
+### Security testing
+```bash
+python tests/test_security.py      # 16 attack tests: SQL injection, login attacks, privilege escalation,
+                                   # session hijack, forged agent plans, prompt injection, XSS, malicious files
+pip install -r requirements-dev.txt
+bandit -r pharmacy app.py scripts eval   # static code scan: 0 issues
+pip-audit -r requirements.txt            # known vulnerabilities in libraries: none found
+```
 
 ## Run it
 

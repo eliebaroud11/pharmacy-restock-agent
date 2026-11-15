@@ -6,7 +6,7 @@ plain() escapes every Markdown/HTML control character so the text shows exactly 
 """
 import re
 
-_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~$:])")
+_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|~$:])")
 
 
 def plain(value, limit: int = 500) -> str:
@@ -14,4 +14,6 @@ def plain(value, limit: int = 500) -> str:
     s = s.replace("\r", " ").replace("\n", " ")
     if len(s) > limit:
         s = s[:limit] + "…"
+    # Two layers: HTML special characters become entities (shown as text), then Markdown syntax is escaped.
+    s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return _SPECIAL.sub(r"\\\1", s)

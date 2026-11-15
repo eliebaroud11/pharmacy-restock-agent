@@ -4,6 +4,12 @@ address = "localhost"
 headless = true
 # Invoice photos are a few MB at most; refuse anything bigger.
 maxUploadSize = 10
+maxMessageSize = 50
+# Block cross-site request forgery and requests from other websites (explicit, not left to defaults).
+enableXsrfProtection = true
+enableCORS = true
+# Don't serve any files from a static folder.
+enableStaticServing = false
 
 [browser]
 gatherUsageStats = false
@@ -11,6 +17,8 @@ gatherUsageStats = false
 [client]
 # Hide the developer menu and "Deploy" button.
 toolbarMode = "minimal"
+# Never show code or stack traces to users if something crashes.
+showErrorDetails = "none"
 
 [theme]
 base = "light"

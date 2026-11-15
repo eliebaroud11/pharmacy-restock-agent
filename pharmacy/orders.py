@@ -9,20 +9,34 @@ from collections import defaultdict
 from .db import log, now, order_with_lines
 
 
+MAX_QTY = 10_000  # per line; anything bigger is a typo or an attack
+
+
 class ApprovalRequired(Exception):
     pass
+
+
+def _qty(value, allow_zero=False) -> int:
+    try:
+        q = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("Quantity must be a whole number.")
+    if q > MAX_QTY or q < (0 if allow_zero else 1):
+        raise ValueError(f"Quantity must be between {0 if allow_zero else 1} and {MAX_QTY}.")
+    return q
 
 
 def draft_orders(conn, items, reason: str = "manual request"):
     """items: list of (medicine_id, qty). Creates one draft order per supplier."""
     by_supplier = defaultdict(list)
     for med_id, qty in items:
-        if qty <= 0:
+        qty = _qty(qty, allow_zero=True)
+        if qty == 0:
             continue
-        sup = conn.execute("SELECT supplier_id FROM medicines WHERE id = ?", (med_id,)).fetchone()
+        sup = conn.execute("SELECT supplier_id FROM medicines WHERE id = ?", (int(med_id),)).fetchone()
         if sup is None:
             raise ValueError(f"Unknown medicine id {med_id}")
-        by_supplier[sup["supplier_id"]].append((med_id, int(qty)))
+        by_supplier[sup["supplier_id"]].append((int(med_id), qty))
 
     order_ids = []
     for supplier_id, lines in by_supplier.items():
@@ -57,7 +71,8 @@ def update_line(conn, order_id: int, medicine_id: int, qty: int, actor: str):
     order, _ = order_with_lines(conn, order_id)
     if order is None or order["status"] != "draft":
         raise ValueError("Only draft orders can be edited.")
-    if qty <= 0:
+    qty = _qty(qty, allow_zero=True)
+    if qty == 0:
         conn.execute("DELETE FROM order_lines WHERE order_id = ? AND medicine_id = ?", (order_id, medicine_id))
     else:
         conn.execute("UPDATE order_lines SET qty = ? WHERE order_id = ? AND medicine_id = ?", (qty, order_id, medicine_id))

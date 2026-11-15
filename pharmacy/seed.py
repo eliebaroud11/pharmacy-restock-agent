@@ -27,8 +27,10 @@ def seed(conn=None, today: date | None = None, reset: bool = True):
     conn = conn or connect()
     today = today or date.today()
     if reset:
-        for t in ("audit_log", "batches", "order_lines", "orders", "medicines", "suppliers"):
-            conn.execute(f"DELETE FROM {t}")
+        # Fixed statements (no string-built SQL). Accounts are never touched by a reset.
+        for stmt in ("DELETE FROM audit_log", "DELETE FROM batches", "DELETE FROM order_lines",
+                     "DELETE FROM orders", "DELETE FROM medicines", "DELETE FROM suppliers"):
+            conn.execute(stmt)
     sup_ids = []
     for name, contact in SUPPLIERS:
         cur = conn.execute("INSERT INTO suppliers (name, contact) VALUES (?, ?)", (name, contact))

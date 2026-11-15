@@ -107,6 +107,13 @@ if user and time.time() - st.session_state.get("last_seen", 0) > IDLE_MINUTES * 
     st.session_state.clear()
     st.session_state["flash_login"] = f"You were signed out after {IDLE_MINUTES} minutes without activity."
     user = None
+if user and not auth.session_valid(conn, user):
+    # Account deactivated, or password changed elsewhere: end this session now.
+    db.log(conn, user["username"], "session ended (account changed)")
+    conn.commit()
+    st.session_state.clear()
+    st.session_state["flash_login"] = "Your session has ended. Please sign in again."
+    user = None
 
 if not user:
     _, mid, _ = st.columns([1, 1.1, 1])
@@ -172,8 +179,8 @@ with st.sidebar:
                 try:
                     if new != new2:
                         raise auth.AuthError("The two new passwords don't match.")
-                    auth.change_password(conn, user["id"], cur, new)
-                    notice("Password updated.")
+                    user["session_version"] = auth.change_password(conn, user["id"], cur, new)
+                    notice("Password updated. Any other open sessions were signed out.")
                 except auth.AuthError as e:
                     notice(str(e), dark=True)
     if user["is_admin"]:
@@ -185,7 +192,8 @@ with st.sidebar:
                 if u["id"] != user["id"]:
                     if c2.button("Deactivate" if u["active"] else "Activate", key=f"act{u['id']}"):
                         try:
-                            auth.set_active(conn, u["id"], not u["active"], user["username"])
+                            auth.set_active(conn, u["id"], not u["active"], user["username"],
+                                            by_admin=auth.is_admin(conn, user["id"]))
                             st.rerun()
                         except auth.AuthError as e:
                             notice(str(e), dark=True)
@@ -197,7 +205,8 @@ with st.sidebar:
                 admin = st.checkbox("Administrator")
                 if st.form_submit_button("Add account"):
                     try:
-                        auth.create_user(conn, uname, full, pw, is_admin=admin, actor=user["username"])
+                        auth.create_user(conn, uname, full, pw, is_admin=admin, actor=user["username"],
+                                         by_admin=auth.is_admin(conn, user["id"]))  # re-checked in the database
                         notice(f"Account '{uname}' created.")
                     except auth.AuthError as e:
                         notice(str(e), dark=True)
@@ -253,7 +262,8 @@ with tab_alerts:
             if a["already_on_order"]:
                 c2.markdown(tag("On an open order"), unsafe_allow_html=True)
                 continue
-            qty = c2.number_input("Order qty", min_value=0, value=int(a["suggested_qty"]), key=f"q{a['medicine_id']}",
+            qty = c2.number_input("Order qty", min_value=0, max_value=orders.MAX_QTY,
+                                  value=min(int(a["suggested_qty"]), orders.MAX_QTY), key=f"q{a['medicine_id']}",
                                   label_visibility="collapsed")
             if c3.checkbox("Order", key=f"c{a['medicine_id']}"):
                 picks.append((a["medicine_id"], qty))
@@ -263,7 +273,8 @@ with tab_alerts:
         names = {m["name"]: m["id"] for m in meds}
         manual = st.multiselect("Medicines", list(names))
         for n in manual:
-            picks.append((names[n], st.number_input(f"Qty: {n}", min_value=1, value=10, key=f"m{names[n]}")))
+            picks.append((names[n], st.number_input(f"Qty: {n}", min_value=1, max_value=orders.MAX_QTY, value=10,
+                                                    key=f"m{names[n]}")))
 
     if st.button(f"Draft order for {len(picks)} item(s)" if picks else "Draft order", type="primary", disabled=not picks):
         ids = orders.draft_orders(conn, picks, reason="alert" if alerts else "manual request")
@@ -287,7 +298,8 @@ with tab_orders:
             if order["status"] == "draft":
                 st.caption("Review the quantities, then approve to place the order.")
                 for l in lines:
-                    new = st.number_input(l["name"], min_value=0, value=int(l["qty"]), key=f"ol{order['id']}_{l['medicine_id']}")
+                    new = st.number_input(l["name"], min_value=0, max_value=orders.MAX_QTY, value=int(l["qty"]),
+                                          key=f"ol{order['id']}_{l['medicine_id']}")
                     if new != l["qty"]:
                         orders.update_line(conn, order["id"], l["medicine_id"], int(new), pharmacist)
                         st.rerun()
@@ -344,7 +356,10 @@ with tab_receive:
         if upload is not None and confirmed and st.session_state.get("processed") != file_key:
             st.session_state["processed"] = file_key
             catalog = [r["name"] for r in conn.execute("SELECT name FROM medicines ORDER BY name")]
-            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(upload.name).suffix) as f:
+            # Never trust the uploaded file name: keep only a known extension, write to a fresh temp file.
+            ext = Path(upload.name).suffix.lower()
+            ext = ext if ext in (".jpg", ".jpeg", ".png", ".webp", ".pdf") else ".bin"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
                 f.write(upload.getbuffer())
             with st.spinner("Reading the invoice and checking it against the order..."):
                 res = read_invoice(f.name, catalog)

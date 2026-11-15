@@ -176,6 +176,7 @@ def test_bad_uploads_are_refused():
 
 def test_accounts_and_lockout():
     from pharmacy import auth
+    auth.FAIL_DELAY_SECONDS = 0
     conn = db.connect(":memory:")
     auth.ensure_schema(conn)
     assert not auth.has_users(conn)
@@ -185,12 +186,12 @@ def test_accounts_and_lockout():
     assert pw not in row["password_hash"] and row["password_hash"].startswith("scrypt$")  # never stored in plain text
     for bad in [("lea", "short"), ("lea2", "lea2")]:  # too short / same as username
         try:
-            auth.create_user(conn, bad[0], "X", bad[1])
+            auth.create_user(conn, bad[0], "X", bad[1], by_admin=True)
             raise AssertionError("weak password accepted")
         except auth.AuthError:
             pass
     try:
-        auth.create_user(conn, "LEA", "Dup", pw)  # usernames are case-insensitive
+        auth.create_user(conn, "LEA", "Dup", pw, by_admin=True)  # usernames are case-insensitive
         raise AssertionError("duplicate username accepted")
     except auth.AuthError:
         pass
@@ -211,7 +212,7 @@ def test_accounts_and_lockout():
     except auth.AuthError as e:
         assert str(e) == "Wrong username or password."  # same message: doesn't reveal which usernames exist
     try:
-        auth.set_active(conn, 1, False, "lea")
+        auth.set_active(conn, 1, False, "lea", by_admin=True)
         raise AssertionError("last admin deactivated")
     except auth.AuthError:
         pass

@@ -30,7 +30,7 @@ def main():
     order, lines = db.order_with_lines(conn, args.order_id)
     if order is None:
         sys.exit(f"Order #{args.order_id} not found. Draft and approve it in the app first.")
-    rng = random.Random(args.order_id)
+    rng = random.Random(args.order_id)  # nosec B311 - fake demo data, not security
     inv_lines = []
     for n, l in enumerate(lines):
         qty = l["qty"] - (4 if args.short and n == 0 else 0)

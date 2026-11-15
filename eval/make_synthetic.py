@@ -144,7 +144,7 @@ def draw_invoice(i, lines, injection, mmyy, blur, rng, supplier=SUPPLIER):
 
 
 def main():
-    rng = random.Random(2026)
+    rng = random.Random(2026)  # nosec B311 - fake test data, not security
     ROOT.mkdir(parents=True, exist_ok=True)
     for i, (scenario, desc) in enumerate(SCENARIOS, start=1):
         cdir = ROOT / f"synthetic_{i:02d}"

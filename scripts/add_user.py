@@ -24,7 +24,8 @@ def main():
     if pw != getpass.getpass("Confirm password: "):
         sys.exit("Passwords don't match.")
     try:
-        auth.create_user(conn, username, full, pw, is_admin=args.admin, actor="command line")
+        # Whoever can run commands on this computer can already open the database, so they count as admin here.
+        auth.create_user(conn, username, full, pw, is_admin=args.admin, actor="command line", by_admin=True)
     except auth.AuthError as e:
         sys.exit(str(e))
     print(f"Created account '{username}'{' (administrator)' if args.admin else ''}.")
