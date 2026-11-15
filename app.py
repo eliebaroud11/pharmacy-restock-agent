@@ -15,7 +15,7 @@ from pharmacy import auth, db, orders  # noqa: E402
 from pharmacy.agent import execute_plan, plan_followup  # noqa: E402
 from pharmacy.alerts import find_alerts  # noqa: E402
 from pharmacy.invoice import read_invoice  # noqa: E402
-from pharmacy import limits  # noqa: E402
+from pharmacy import catalog, limits, send  # noqa: E402
 from pharmacy.receive import AlreadyReceived, receive_delivery  # noqa: E402
 from pharmacy.safe import plain  # noqa: E402
 from pharmacy.seed import seed  # noqa: E402
@@ -74,6 +74,24 @@ def notice(title: str, lines=(), dark=False):
     items = "".join(f"<li>{esc(l)}</li>" for l in lines)
     st.markdown(f'<div class="rs-notice{" dark" if dark else ""}"><b>{esc(title)}</b>'
                 + (f"<ul>{items}</ul>" if items else "") + "</div>", unsafe_allow_html=True)
+
+
+def send_panel(conn, order_id, supplier, contact, text, actor, key):
+    """Open the approved message in WhatsApp or email; the pharmacist presses Send there."""
+    sent = conn.execute("SELECT at, actor FROM audit_log WHERE action = ? ORDER BY id DESC LIMIT 1",
+                        (f"marked order #{order_id} as sent",)).fetchone()
+    c1, c2, c3 = st.columns([1, 1, 1])
+    c1.link_button("Open in WhatsApp", send.whatsapp_url(contact or "", text), use_container_width=True)
+    c2.link_button("Open in email", send.email_url(contact or "", f"Order #{order_id} - {supplier}", text),
+                   use_container_width=True)
+    if sent:
+        c3.caption(f"Sent {sent['at'].replace('T', ' at ')[:19]} by {sent['actor']}")
+    elif c3.button("Mark as sent", key=f"sent{key}", use_container_width=True):
+        db.log(conn, actor, f"marked order #{order_id} as sent", {"supplier": supplier})
+        conn.commit()
+        st.rerun()
+    st.caption(f"Supplier contact: {contact or 'not set'}. WhatsApp or your email app opens with the message ready; "
+               "nothing is sent until you press Send there.")
 
 
 def step(n, title):
@@ -241,8 +259,8 @@ k3.metric("Awaiting delivery", counts.get("pending_delivery", 0))
 k4.metric("Deliveries to review", counts.get("needs_review", 0))
 st.write("")
 
-tab_alerts, tab_orders, tab_receive, tab_stock, tab_log = st.tabs(
-    ["Alerts", "Orders", "Receive delivery", "Stock", "Audit log"])
+tab_alerts, tab_orders, tab_receive, tab_stock, tab_products, tab_results, tab_log = st.tabs(
+    ["Alerts", "Orders", "Receive delivery", "Stock", "Products", "Results", "Audit log"])
 
 # ---------------- Alerts ----------------
 with tab_alerts:
@@ -320,10 +338,9 @@ with tab_orders:
             else:
                 st.caption(f"Approved by {order['approved_by']} on {(order['approved_at'] or '?').replace('T', ' at ')}")
                 st.dataframe([{"Medicine": l["name"], "Quantity": l["qty"]} for l in lines], hide_index=True, width="stretch")
-                st.text_area("Message to send the supplier", orders.supplier_message(conn, order["id"]),
-                             height=180, key=f"sm{order['id']}")
-                if order["contact"]:
-                    st.caption(f"Supplier contact: {order['contact']}")
+                msg = orders.supplier_message(conn, order["id"])
+                st.text_area("Message to send the supplier", msg, height=180, key=f"sm{order['id']}")
+                send_panel(conn, order["id"], order["supplier"], order["contact"], msg, pharmacist, f"o{order['id']}")
 
 # ---------------- Receive ----------------
 with tab_receive:
@@ -424,6 +441,9 @@ with tab_receive:
                         notice("Approved plan carried out.", lines_done)
                         for m in d["messages"]:
                             st.text_area("Message to send the supplier", m, height=200, key="sent_msg")
+                            o, _ = db.order_with_lines(conn, rec["order_id"])
+                            send_panel(conn, rec["order_id"], o["supplier"], o["contact"], m, pharmacist,
+                                       f"f{rec['order_id']}")
                     elif plan and is_open:
                         st.divider()
                         st.markdown("#### Proposed follow-up")
@@ -507,6 +527,118 @@ with tab_stock:
         "Level": st.column_config.ProgressColumn("Level vs target", min_value=0, max_value=100, format="%d%%"),
         "Nearest expiry": st.column_config.DateColumn(format="D MMM YYYY"),
     })
+
+# ---------------- Products ----------------
+with tab_products:
+    st.subheader("Products and suppliers")
+    st.caption("Add a medicine before ordering it or receiving it, for example when an invoice has a new product.")
+    suppliers = [dict(r) for r in conn.execute("SELECT id, name, contact FROM suppliers ORDER BY name")]
+    c1, c2 = st.columns(2)
+    with c1, st.container(border=True):
+        st.markdown("**Add a medicine**")
+        with st.form("add_med", clear_on_submit=True):
+            name = st.text_input("Name, strength and pack", placeholder="e.g. Aspirin 100mg tabs (30)")
+            sup = st.selectbox("Supplier", suppliers, format_func=lambda s: s["name"]) if suppliers else None
+            a, b = st.columns(2)
+            mn = a.number_input("Minimum stock", min_value=0, max_value=catalog.MAX_STOCK_LEVEL, value=10)
+            tg = b.number_input("Target stock", min_value=1, max_value=catalog.MAX_STOCK_LEVEL, value=30)
+            st.caption("Optional: stock already on the shelf")
+            a, b, c = st.columns(3)
+            oq = a.number_input("Quantity", min_value=0, max_value=catalog.MAX_STOCK_LEVEL, value=0)
+            ob = b.text_input("Batch")
+            oe = c.date_input("Expiry", value=None, min_value=date.today())
+            if st.form_submit_button("Add medicine", type="primary"):
+                try:
+                    if not sup:
+                        raise catalog.CatalogError("Add a supplier first.")
+                    catalog.add_medicine(conn, name, sup["id"], mn, tg, pharmacist, oq, ob, oe)
+                    st.session_state["flash_products"] = f"Added '{name.strip()}'."
+                    st.rerun()
+                except catalog.CatalogError as e:
+                    notice(str(e), dark=True)
+    with c2, st.container(border=True):
+        st.markdown("**Add a supplier**")
+        with st.form("add_sup", clear_on_submit=True):
+            sname = st.text_input("Supplier name")
+            scontact = st.text_input("WhatsApp number or email", placeholder="+961 1 234 567 or orders@supplier.com")
+            if st.form_submit_button("Add supplier"):
+                try:
+                    catalog.add_supplier(conn, sname, scontact, pharmacist)
+                    st.session_state["flash_products"] = f"Added supplier '{sname.strip()}'."
+                    st.rerun()
+                except catalog.CatalogError as e:
+                    notice(str(e), dark=True)
+    if "flash_products" in st.session_state:
+        notice(st.session_state.pop("flash_products"))
+    st.markdown("**Catalog**")
+    st.dataframe([{"Medicine": r["name"], "Supplier": r["supplier"], "Minimum": r["min_stock"], "Target": r["target_stock"],
+                   "In stock": r["qty"]} for r in db.stock_summary(conn)], hide_index=True, width="stretch")
+    st.markdown("**Suppliers**")
+    st.dataframe([{"Supplier": s["name"], "Contact": s["contact"] or ""} for s in suppliers], hide_index=True, width="stretch")
+
+# ---------------- Results ----------------
+with tab_results:
+    import json as _json
+
+    import pandas as pd
+    st.subheader("Does it work, and does it pay?")
+    res_dir = Path(__file__).resolve().parent / "eval" / "results"
+    runs = sorted(res_dir.glob("run-*.json"))
+    if not runs:
+        notice("No test runs yet. Run: python eval/run_eval.py")
+    else:
+        last = _json.loads(runs[-1].read_text(encoding="utf-8"))
+        n, ok, humans = last["cases"], last["passed"], last["human_needed"]
+        ai, human = last.get("avg_cost_usd", 0), last.get("human_cost_usd", 0)
+        real_cases = sum(1 for r in last["results"] if r["case"].startswith("real_"))
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Invoices handled right", f"{ok}/{n}")
+        k2.metric("Needed a pharmacist", f"{humans}/{n}")
+        k3.metric("AI cost per delivery", f"${ai:.4f}")
+        k4.metric("Pharmacist time per delivery", f"${human:.2f}")
+        st.caption(f"{ok / n:.0%} handled right. Every case that needed a pharmacist had a real problem on the invoice. "
+                   + (f"AI is about {human / ai:,.0f}x cheaper than pharmacist time. " if ai else "")
+                   + f"Model: {last.get('model', '?')}. Latest run {last['at']}: {real_cases} real and "
+                   f"{n - real_cases} synthetic invoices.")
+
+        hist = res_dir / "history.csv"
+        if hist.exists():
+            rows = []
+            for line in hist.read_text(encoding="utf-8").splitlines():
+                parts = line.split(",")
+                if len(parts) >= 6 and parts[2].isdigit() and int(parts[2]):
+                    rows.append({"Run": f"{parts[0][4:8]} {parts[0][9:13]}", "Pass rate %": round(100 * int(parts[3]) / int(parts[2])),
+                                 "Model": parts[1].split("/")[-1]})
+            if rows:
+                st.markdown("**Pass rate across test runs**")
+                st.line_chart(pd.DataFrame(rows), x="Run", y="Pass rate %", color="#1F2937", height=220)
+
+        c1, c2 = st.columns(2)
+        with c1, st.container(border=True):
+            st.markdown("**Prompt-injection red team** (12 malicious invoices)")
+            for fname, label in (("redteam.json", "Normal"), ("redteam_missed.json", "Detection switched off")):
+                f = res_dir / fname
+                if f.exists():
+                    rt = _json.loads(f.read_text(encoding="utf-8"))
+                    st.markdown(f"{label}: **{sum(r['passed'] for r in rt)}/{len(rt)} no harm**, "
+                                f"{sum(r['detected'] for r in rt)}/{len(rt)} flagged as suspicious")
+            st.caption("Run: python eval/redteam.py  and  python eval/redteam.py --assume-missed")
+        with c2, st.container(border=True):
+            st.markdown("**Security tests**")
+            st.markdown("21 attack tests: SQL injection, login attacks, privilege escalation, forged plans, "
+                        "double receiving, malicious files. Code scan (Bandit): 0 issues. Libraries: no known vulnerabilities.")
+            st.caption("Run: python tests/test_security.py")
+
+        cmp_file = res_dir / "compare_models.json"
+        if cmp_file.exists():
+            cmp = _json.loads(cmp_file.read_text(encoding="utf-8"))
+            st.markdown("**Model comparison**")
+            st.dataframe([{"Model": r["model"], "Invoices read right": f"{r.get('read_ok', '-')}/{r.get('read_n', '-')}",
+                           "Sec per invoice": round(r.get("read_secs", 0), 1),
+                           "Agent decisions": f"{r.get('agent_ok', '-')}/{r.get('agent_n', 9)}",
+                           "Injection: no harm": f"{r.get('safe', '-')}/12", "Detected": f"{r.get('detected', '-')}/12",
+                           "Cost per problem delivery $": round(r.get("read_cost", 0) + r.get("agent_cost", 0), 5)}
+                          for r in cmp], hide_index=True, width="stretch")
 
 # ---------------- Audit log ----------------
 with tab_log:

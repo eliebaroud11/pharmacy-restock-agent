@@ -289,6 +289,36 @@ def test_supplier_message_guard():
     assert all(message_problem(m, refs) for m in bad), [m for m in bad if not message_problem(m, refs)]
 
 
+# ---------- Products and suppliers ----------
+def test_catalog_inputs_validated():
+    from pharmacy import catalog
+    conn = fresh()
+    before = table_counts(conn)
+    sup = conn.execute("SELECT id FROM suppliers LIMIT 1").fetchone()[0]
+    med = catalog.add_medicine(conn, "Aspirin'); DROP TABLE medicines;-- 100mg", sup, 5, 20, "admin")  # stored as text
+    assert conn.execute("SELECT name FROM medicines WHERE id = ?", (med,)).fetchone()[0].startswith("Aspirin');")
+    assert table_counts(conn)["medicines"] == before["medicines"] + 1
+    expect(catalog.CatalogError, catalog.add_medicine, conn, "Aspirin'); DROP TABLE medicines;-- 100mg", sup, 5, 20, "admin")  # duplicate
+    expect(catalog.CatalogError, catalog.add_medicine, conn, "X" * 200, sup, 5, 20, "admin")      # too long
+    expect(catalog.CatalogError, catalog.add_medicine, conn, "Valid name 10mg", sup, 50, 20, "admin")  # target < min
+    expect(catalog.CatalogError, catalog.add_medicine, conn, "Valid name 10mg", sup, -1, 20, "admin")
+    expect(catalog.CatalogError, catalog.add_medicine, conn, "Valid name 10mg", 99999, 5, 20, "admin")  # no such supplier
+    expect(catalog.CatalogError, catalog.add_medicine, conn, "Valid name 10mg", sup, 5, 20, "admin", opening_qty=5)  # no expiry
+    for bad in ["javascript:alert(1)", "http://evil.example", "<script>", "1 OR 1=1"]:
+        expect(catalog.CatalogError, catalog.add_supplier, conn, "Some Supplier", bad, "admin")
+
+
+def test_send_links_cannot_be_hijacked():
+    from urllib.parse import unquote
+    from pharmacy.send import email_url, whatsapp_url
+    evil = "Order\n&to=attacker@evil.example&cc=x@evil.example#frag?y=1"
+    w = whatsapp_url("+961 3 123 456", evil)
+    assert w.startswith("https://wa.me/9613123456?text=") and "&" not in w.split("text=", 1)[1] and "#" not in w
+    m = email_url("orders@cedar.example", "Order #1", evil)
+    assert m.count("&") == 1 and "#" not in m and unquote(m.split("body=", 1)[1]) == evil  # body stays body
+    assert email_url("not-an-email\n<x>", "s", "b").startswith("mailto:?")                  # junk contact dropped
+
+
 # ---------- Output encoding (XSS / markdown injection) ----------
 def test_untrusted_text_cannot_inject_html_or_links():
     import html as h

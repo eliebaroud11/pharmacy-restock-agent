@@ -5,7 +5,6 @@
 *.db
 uploads/
 demo_invoices/
-eval/results/
 
 # Python
 __pycache__/
