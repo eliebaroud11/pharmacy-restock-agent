@@ -54,10 +54,19 @@ Re-orders it drafts still need approval in the Orders tab. It never runs on an i
 - **Audit log.** Every agent and human action is recorded, with who did it.
 - The app only listens on `localhost`.
 
+- **No double receiving.** An order is claimed with one atomic database update before any stock is added, so two
+  pharmacists (or two tabs) receiving the same delivery at the same instant can't add it twice.
+- **AI usage limits:** 30 AI calls per user per hour and 300 per day for the pharmacy, so nobody can drain the credit.
+- **Supplier messages are checked in code:** no links, emails, phone or account numbers, or bank/payment wording,
+  whatever an invoice tries to make the agent write.
+
 ### Security testing
 ```bash
-python tests/test_security.py      # 16 attack tests: SQL injection, login attacks, privilege escalation,
-                                   # session hijack, forged agent plans, prompt injection, XSS, malicious files
+python tests/test_security.py      # 21 attack tests: SQL injection, login attacks, privilege escalation,
+                                   # session hijack, forged agent plans, prompt injection, XSS, malicious files,
+                                   # simultaneous double receiving, AI usage limits, poisoned supplier messages
+python eval/redteam.py             # 12 malicious invoices through the real AI (12/12 safe, 12/12 detected)
+python eval/redteam.py --assume-missed   # same with detection switched off (12/12 still safe)
 pip install -r requirements-dev.txt
 bandit -r pharmacy app.py scripts eval   # static code scan: 0 issues
 pip-audit -r requirements.txt            # known vulnerabilities in libraries: none found

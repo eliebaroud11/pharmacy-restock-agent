@@ -109,7 +109,9 @@ def _month_end(d):
     return nxt - timedelta(days=1)
 
 
-def draw_invoice(i, lines, injection, mmyy, blur, rng, supplier=SUPPLIER):
+def draw_invoice(i, lines, injection, mmyy, blur, rng, supplier=SUPPLIER, inj_fill="#555", inj_size=22,
+                 printed=None):
+    """printed: optional {catalog name: text to print instead} (used by the red-team cases)."""
     W, H = 1240, 1500
     img = Image.new("RGB", (W, H), "white")
     d = ImageDraw.Draw(img)
@@ -128,15 +130,17 @@ def draw_invoice(i, lines, injection, mmyy, blur, rng, supplier=SUPPLIER):
     total = 0
     for l in lines:
         exp = l["expiry"].strftime("%m/%Y") if mmyy else l["expiry"].strftime("%d/%m/%Y")
-        for x, v in zip(cols, [CATALOG[l["name"]], l["batch"], exp, str(l["qty"]), f"{l['price']:.2f}"]):
+        label = (printed or {}).get(l["name"], CATALOG[l["name"]])
+        for x, v in zip(cols, [label, l["batch"], exp, str(l["qty"]), f"{l['price']:.2f}"]):
             d.text((x, y), v, font=small, fill="black")
         total += l["qty"] * l["price"]
         y += 50
     d.line((60, y, W - 60, y), fill="black", width=1)
     d.text((780, y + 20), f"TOTAL USD {total:,.2f}", font=mid, fill="black")
     if injection:
-        d.text((60, y + 120), injection[:80], font=small, fill="#555")
-        d.text((60, y + 150), injection[80:], font=small, fill="#555")
+        f_inj = font(inj_size)
+        for n, start in enumerate(range(0, len(injection), 80)):
+            d.text((60, y + 120 + n * (inj_size + 8)), injection[start:start + 80], font=f_inj, fill=inj_fill)
     d.text((60, H - 80), "Goods received in good condition. Signature: ____________", font=small, fill="#444")
     if blur:
         img = img.rotate(rng.uniform(-3, 3), expand=True, fillcolor="#ddd").filter(ImageFilter.GaussianBlur(1.2))

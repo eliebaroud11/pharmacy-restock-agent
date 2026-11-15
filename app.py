@@ -15,7 +15,8 @@ from pharmacy import auth, db, orders  # noqa: E402
 from pharmacy.agent import execute_plan, plan_followup  # noqa: E402
 from pharmacy.alerts import find_alerts  # noqa: E402
 from pharmacy.invoice import read_invoice  # noqa: E402
-from pharmacy.receive import receive_delivery  # noqa: E402
+from pharmacy import limits  # noqa: E402
+from pharmacy.receive import AlreadyReceived, receive_delivery  # noqa: E402
 from pharmacy.safe import plain  # noqa: E402
 from pharmacy.seed import seed  # noqa: E402
 
@@ -359,24 +360,32 @@ with tab_receive:
             # Never trust the uploaded file name: keep only a known extension, write to a fresh temp file.
             ext = Path(upload.name).suffix.lower()
             ext = ext if ext in (".jpg", ".jpeg", ".png", ".webp", ".pdf") else ".bin"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
-                f.write(upload.getbuffer())
-            with st.spinner("Reading the invoice and checking it against the order..."):
-                res = read_invoice(f.name, catalog)
-            Path(f.name).unlink(missing_ok=True)
-            if res.error:
-                st.session_state["receipt"] = {"order_id": order["id"], "error": res.error}
-            else:
-                result = receive_delivery(conn, order["id"], res.data, pharmacist, confirmed)
-                rec = {
-                    "order_id": order["id"], "invoice": res.data, "result": result,
-                    "meta": f"Read by {res.model} · {res.input_tokens + res.output_tokens} tokens · ${res.cost_usd:.4f}",
-                }
-                if not result.get("applied"):
-                    # Something is wrong: the agent decides what should happen next.
-                    with st.spinner("The agent is working out what to do next..."):
-                        rec["plan"] = plan_followup(conn, order["id"], res.data, result["issues"]).to_dict()
-                st.session_state["receipt"] = rec
+            try:
+                limits.use_ai(conn, user["username"], f"read invoice for order #{order['id']}")
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
+                    f.write(upload.getbuffer())
+                with st.spinner("Reading the invoice and checking it against the order..."):
+                    res = read_invoice(f.name, catalog)
+                Path(f.name).unlink(missing_ok=True)
+                if res.error:
+                    st.session_state["receipt"] = {"order_id": order["id"], "error": res.error}
+                else:
+                    result = receive_delivery(conn, order["id"], res.data, pharmacist, confirmed)
+                    rec = {
+                        "order_id": order["id"], "invoice": res.data, "result": result,
+                        "meta": f"Read by {res.model} · {res.input_tokens + res.output_tokens} tokens · ${res.cost_usd:.4f}",
+                    }
+                    if not result.get("applied"):
+                        # Something is wrong: the agent decides what should happen next.
+                        try:
+                            limits.use_ai(conn, user["username"], f"agent plan for order #{order['id']}")
+                            with st.spinner("The agent is working out what to do next..."):
+                                rec["plan"] = plan_followup(conn, order["id"], res.data, result["issues"]).to_dict()
+                        except limits.LimitReached as e:
+                            rec["plan"] = {"actions": [], "rejected": [], "summary": "", "error": str(e)}
+                    st.session_state["receipt"] = rec
+            except (limits.LimitReached, AlreadyReceived, ValueError) as e:
+                st.session_state["receipt"] = {"order_id": order["id"], "error": str(e)}
             st.rerun()
 
     # Result of the last upload (shown even after the order leaves the waiting list).
@@ -449,15 +458,19 @@ with tab_receive:
                                 done = execute_plan(conn, rec["order_id"], plan, set(approved), pharmacist, inv,
                                                     result["issues"])
                                 st.session_state["receipt"] = {**rec, "done": done}
-                            except (ValueError, PermissionError) as e:
+                            except (ValueError, PermissionError, AlreadyReceived) as e:
                                 st.session_state["receipt"] = {**rec, "exec_error": str(e)}
                             st.rerun()
                         if questions and c2.button("Re-plan with my answers", key=f"rp{rec['order_id']}",
                                                    disabled=not any(answers.values())):
-                            with st.spinner("Re-planning..."):
-                                new = plan_followup(conn, rec["order_id"], inv, result["issues"],
-                                                    answers={k: v for k, v in answers.items() if v}).to_dict()
-                            st.session_state["receipt"] = {**rec, "plan": new}
+                            try:
+                                limits.use_ai(conn, user["username"], f"agent re-plan for order #{rec['order_id']}")
+                                with st.spinner("Re-planning..."):
+                                    new = plan_followup(conn, rec["order_id"], inv, result["issues"],
+                                                        answers={k: v[:300] for k, v in answers.items() if v}).to_dict()
+                                st.session_state["receipt"] = {**rec, "plan": new}
+                            except limits.LimitReached as e:
+                                st.session_state["receipt"] = {**rec, "exec_error": str(e)}
                             st.rerun()
                         if rec.get("exec_error"):
                             notice(rec["exec_error"], dark=True)
@@ -465,8 +478,12 @@ with tab_receive:
                     if is_open and not rec.get("done"):
                         with st.expander("Other options"):
                             if st.button("Accept the whole delivery as invoiced", key=f"acc{rec['order_id']}"):
-                                res2 = receive_delivery(conn, rec["order_id"], inv, pharmacist, True, accept_discrepancies=True)
-                                st.session_state["receipt"] = {**rec, "result": res2}
+                                try:
+                                    res2 = receive_delivery(conn, rec["order_id"], inv, pharmacist, True,
+                                                            accept_discrepancies=True)
+                                    st.session_state["receipt"] = {**rec, "result": res2}
+                                except (AlreadyReceived, ValueError) as e:
+                                    st.session_state["receipt"] = {**rec, "exec_error": str(e)}
                                 st.rerun()
                 st.caption(rec["meta"])
             if st.button("Clear", key="clear_receipt"):

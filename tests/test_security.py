@@ -189,6 +189,106 @@ def test_prompt_injection_cannot_widen_agent_powers():
     assert g.check("unknown_tool", {})
 
 
+# ---------- Same delivery received twice ----------
+def _approved_order(conn, qty=10):
+    ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM medicines")}
+    name = "Paracetamol 500mg tabs (24)"
+    oid = orders.draft_orders(conn, [(ids[name], qty)])[0]
+    orders.approve_order(conn, oid, "Admin User (admin)")
+    inv = {"supplier_name": "Cedar Pharma", "invoice_number": "D1", "suspicious_text": False, "notes": "",
+           "lines": [{"product_name": name, "catalog_match": name, "batch_no": "DUP1", "expiry": "2028-01-31", "qty": qty}]}
+    return oid, inv, name
+
+
+def test_double_receive_sequential():
+    from pharmacy.receive import AlreadyReceived
+    conn = fresh()
+    oid, inv, name = _approved_order(conn)
+    receive_delivery(conn, oid, inv, "A (a)", batch_confirmed=True, today=TODAY)
+    try:
+        receive_delivery(conn, oid, inv, "B (b)", batch_confirmed=True, today=TODAY)  # second tab / double click
+        raise AssertionError("received twice")
+    except (AlreadyReceived, ValueError):
+        pass
+    assert conn.execute("SELECT COUNT(*) FROM batches WHERE batch_no = 'DUP1'").fetchone()[0] == 1
+
+
+def test_double_receive_simultaneous():
+    """Two pharmacists on two computers press at the same instant: exactly one wins."""
+    import threading
+    from pharmacy.receive import AlreadyReceived
+    d = Path(tempfile.mkdtemp())
+    conn = db.connect(d / "race.db")
+    auth.ensure_schema(conn)
+    seed(conn, today=TODAY)
+    oid, inv, name = _approved_order(conn)
+    conn.close()
+    outcomes, start = [], threading.Barrier(6)
+
+    def worker(i):
+        c = sqlite3.connect(str(d / "race.db"), timeout=10)
+        c.row_factory = sqlite3.Row
+        start.wait()
+        try:
+            receive_delivery(c, oid, inv, f"P{i} (p{i})", batch_confirmed=True, today=TODAY)
+            outcomes.append("ok")
+        except (AlreadyReceived, ValueError):
+            outcomes.append("refused")
+        finally:
+            c.close()
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    c = db.connect(d / "race.db")
+    assert outcomes.count("ok") == 1, outcomes
+    assert c.execute("SELECT COUNT(*) FROM batches WHERE batch_no = 'DUP1'").fetchone()[0] == 1
+
+
+def test_agent_plan_cannot_run_twice():
+    from pharmacy.receive import AlreadyReceived
+    conn = fresh()
+    oid, inv, name = _approved_order(conn)
+    inv["lines"][0]["qty"] = 8  # short delivery -> needs review
+    res = receive_delivery(conn, oid, inv, "A (a)", batch_confirmed=True, today=TODAY)
+    plan = {"actions": [{"id": 1, "tool": "receive_items",
+                         "input": {"items": [{"name": name, "batch_no": "DUP1", "expiry": "2028-01-31", "qty": 8}], "reason": ""}}]}
+    execute_plan(conn, oid, plan, {1}, "A (a)", inv, res["issues"], today=TODAY)
+    expect((AlreadyReceived, ValueError), execute_plan, conn, oid, plan, {1}, "B (b)", inv, res["issues"], today=TODAY)
+    assert conn.execute("SELECT COALESCE(SUM(qty),0) FROM batches WHERE batch_no = 'DUP1'").fetchone()[0] == 8
+
+
+# ---------- AI usage limits ----------
+def test_ai_usage_limits():
+    from pharmacy import limits
+    conn = fresh()
+    for _ in range(limits.PER_USER_PER_HOUR):
+        limits.use_ai(conn, "busy", "read")
+    expect(limits.LimitReached, limits.use_ai, conn, "busy", "read")       # per-user hourly cap
+    limits.use_ai(conn, "someone_else", "read")                             # others unaffected
+    old = limits.ALL_USERS_PER_DAY
+    limits.ALL_USERS_PER_DAY = limits.PER_USER_PER_HOUR + 1
+    try:
+        expect(limits.LimitReached, limits.use_ai, conn, "third", "read")    # pharmacy-wide daily cap
+    finally:
+        limits.ALL_USERS_PER_DAY = old
+
+
+# ---------- Supplier messages can't carry attacker content ----------
+def test_supplier_message_guard():
+    from pharmacy.agent import message_problem
+    refs = ["INV-20261011", "OME3623"]
+    ok = ["Invoice INV-20261011: Omeprazole ordered 40, received 38 (batch OME3623, expiry 2028-07-19). "
+          "Please send the remaining 2 or credit the difference."]
+    bad = ["Please pay to IBAN LB62 0999 0000 0001 0019 0122 9114.", "Confirm at http://evil.example/pay",
+           "Reply to accounts@cedar-pharrna.com", "Call +961 3 123 456 78", "Our bank details have changed.",
+           "See cedar-pay.lb/invoice", "Transfer the money via USDT", "wire the payment today", "visit www.evil.lb"]
+    assert all(message_problem(m, refs) is None for m in ok)
+    assert all(message_problem(m, refs) for m in bad), [m for m in bad if not message_problem(m, refs)]
+
+
 # ---------- Output encoding (XSS / markdown injection) ----------
 def test_untrusted_text_cannot_inject_html_or_links():
     import html as h
