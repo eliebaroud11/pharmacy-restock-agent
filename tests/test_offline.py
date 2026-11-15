@@ -174,7 +174,53 @@ def test_bad_uploads_are_refused():
             pass
 
 
+def test_accounts_and_lockout():
+    from pharmacy import auth
+    conn = db.connect(":memory:")
+    auth.ensure_schema(conn)
+    assert not auth.has_users(conn)
+    pw = "T3st-" + "x" * 8
+    auth.create_user(conn, "lea", "Lea Test", pw, is_admin=True)
+    row = conn.execute("SELECT password_hash FROM users").fetchone()
+    assert pw not in row["password_hash"] and row["password_hash"].startswith("scrypt$")  # never stored in plain text
+    for bad in [("lea", "short"), ("lea2", "lea2")]:  # too short / same as username
+        try:
+            auth.create_user(conn, bad[0], "X", bad[1])
+            raise AssertionError("weak password accepted")
+        except auth.AuthError:
+            pass
+    try:
+        auth.create_user(conn, "LEA", "Dup", pw)  # usernames are case-insensitive
+        raise AssertionError("duplicate username accepted")
+    except auth.AuthError:
+        pass
+    assert auth.authenticate(conn, "lea", pw)["full_name"] == "Lea Test"
+    for _ in range(auth.MAX_FAILURES):
+        try:
+            auth.authenticate(conn, "lea", "wrong-password")
+        except auth.AuthError:
+            pass
+    try:
+        auth.authenticate(conn, "lea", pw)  # right password, but locked now
+        raise AssertionError("locked account let in")
+    except auth.AuthError as e:
+        assert "Try again" in str(e)
+    try:
+        auth.authenticate(conn, "nobody", pw)
+        raise AssertionError("unknown user let in")
+    except auth.AuthError as e:
+        assert str(e) == "Wrong username or password."  # same message: doesn't reveal which usernames exist
+    try:
+        auth.set_active(conn, 1, False, "lea")
+        raise AssertionError("last admin deactivated")
+    except auth.AuthError:
+        pass
+    actions = [r["action"] for r in conn.execute("SELECT action FROM audit_log")]
+    assert "logged in" in actions and any(a.startswith("failed login") for a in actions)
+
+
 if __name__ == "__main__":
+    test_accounts_and_lockout()
     test_untrusted_text_is_shown_plain()
     test_bad_uploads_are_refused()
     test_agent_guard_blocks_bad_proposals()

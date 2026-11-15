@@ -21,6 +21,7 @@ Update the numbers from `eval/results/history.csv` before posting. If real cases
 | Time | Show | Say |
 |---|---|---|
 | 0:00–0:15 | Title slide | "Every week, a pharmacist in Lebanon checks deliveries line by line against the order, then types each batch into stock. We built an agent that does it." |
+| 0:10–0:15 | Sign-in screen | Sign in (have it done before recording, or show it quickly: "every action is tied to a pharmacist's account"). |
 | 0:15–0:35 | App → Alerts tab | "The agent watches stock and expiry dates. Here it flags Amlodipine as low and Amoxicillin as expiring, and suggests quantities." Tick both → **Draft order**. |
 | 0:35–0:55 | Orders tab | "It drafts the supplier order. Nothing is sent until a named pharmacist approves. That lock is in the code, not the prompt." Click **Approve**. |
 | 0:55–1:25 | Receive tab | Tick "batch matches" → upload the `--short` demo invoice. "It finds the problem, one item is short, and the agent decides what to do: add what's good, re-order the missing units, and draft the message to the supplier. I approve with one click." Click **Approve selected actions**. (Clean invoice on a second order: "Exact match, so stock is updated automatically.") |

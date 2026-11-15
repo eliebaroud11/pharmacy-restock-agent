@@ -1,6 +1,8 @@
 """Pharmacist screen. Run with:  streamlit run app.py"""
+import html
 import os
 import tempfile
+import time
 from datetime import date
 from pathlib import Path
 
@@ -9,7 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from pharmacy import db, orders  # noqa: E402
+from pharmacy import auth, db, orders  # noqa: E402
 from pharmacy.agent import execute_plan, plan_followup  # noqa: E402
 from pharmacy.alerts import find_alerts  # noqa: E402
 from pharmacy.invoice import read_invoice  # noqa: E402
@@ -18,38 +20,64 @@ from pharmacy.safe import plain  # noqa: E402
 from pharmacy.seed import seed  # noqa: E402
 
 DEMO_MODE = os.environ.get("PHARMA_DEMO", "") == "1"
+IDLE_MINUTES = 30
 
-TOOL_LABELS = {"receive_items": "📥 Add to stock", "hold_items": "⏸️ Set aside (not added)",
-               "draft_reorder": "🔁 Draft a re-order", "draft_supplier_message": "✉️ Message to supplier",
-               "ask_pharmacist": "❓ Question for you"}
-STATUS = {  # label, Streamlit colour
-    "draft": ("Draft", "orange"), "pending_delivery": ("Awaiting delivery", "blue"),
-    "needs_review": ("Needs review", "red"), "received": ("Received", "green"), "closed": ("Closed", "gray"),
-}
+TOOL_LABELS = {"receive_items": "Add to stock", "hold_items": "Set aside (not added)",
+               "draft_reorder": "Draft a re-order", "draft_supplier_message": "Message to supplier",
+               "ask_pharmacist": "Question"}
+STATUS = {"draft": "Draft", "pending_delivery": "Awaiting delivery", "needs_review": "Needs review",
+          "received": "Received", "closed": "Closed"}
 
-# Static styling only (no user or AI text ever goes through unsafe_allow_html).
+# Static styling only. Any text from the database, invoices or the AI is escaped before it is placed in HTML.
 CSS = """
 <style>
-  .block-container { padding-top: 3.5rem; padding-bottom: 3rem; max-width: 1280px; }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  html, body, .stApp, p, li, label, input, textarea, h1, h2, h3, h4, table {
+    font-family: 'Inter', -apple-system, 'Segoe UI', Arial, sans-serif; }
+  .block-container { padding-top: 3.2rem; padding-bottom: 3rem; max-width: 1240px; }
   footer { visibility: hidden; }
-  .rs-header { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
-  .rs-logo { width: 46px; height: 46px; border-radius: 12px; background: #137A59; color: #fff;
-             display: flex; align-items: center; justify-content: center; font-size: 24px; }
-  .rs-title { font-size: 1.65rem; font-weight: 700; color: #0F2E2C; line-height: 1.1; margin: 0; }
-  .rs-sub { color: #5A6B69; font-size: 0.95rem; margin: 2px 0 0 0; }
-  div[data-testid="stMetric"] { background: #FFFFFF; border: 1px solid #DCE5DF; border-radius: 12px;
-                                padding: 14px 18px; }
-  div[data-testid="stMetricLabel"] p { font-size: 0.85rem; color: #5A6B69; }
-  button[data-baseweb="tab"] p { font-size: 1rem; font-weight: 600; }
-  div[data-testid="stVerticalBlockBorderWrapper"] { background: #FFFFFF; border-radius: 12px; }
-  .rs-step { font-size: 0.8rem; font-weight: 700; letter-spacing: .06em; color: #137A59; margin-bottom: 2px; }
+  h1, h2, h3, h4 { letter-spacing: -0.01em; }
+  .rs-brand { font-size: 1.05rem; font-weight: 700; letter-spacing: .02em; color: #111827; }
+  .rs-brand span { color: #6B7280; font-weight: 500; }
+  .rs-title { font-size: 1.5rem; font-weight: 700; color: #111827; margin: 0; }
+  .rs-sub { color: #6B7280; font-size: .9rem; margin: 2px 0 14px 0; }
+  .rs-tag { display: inline-block; font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+            color: #374151; border: 1px solid #D1D5DB; border-radius: 4px; padding: 1px 7px; margin-left: 6px;
+            vertical-align: 2px; background: #FFFFFF; }
+  .rs-tag.strong { color: #FFFFFF; background: #1F2937; border-color: #1F2937; }
+  .rs-step { font-size: .72rem; font-weight: 700; letter-spacing: .08em; color: #6B7280; margin-bottom: 2px; }
+  .rs-notice { border: 1px solid #E5E7EB; border-left: 4px solid #9CA3AF; border-radius: 6px; padding: 12px 16px;
+               background: #FFFFFF; margin: 8px 0; color: #111827; }
+  .rs-notice.dark { border-left-color: #111827; }
+  .rs-notice b { display: block; margin-bottom: 2px; }
+  .rs-notice ul { margin: 6px 0 0 18px; padding: 0; }
+  div[data-testid="stMetric"] { background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 8px; padding: 14px 18px; }
+  div[data-testid="stMetricLabel"] p { font-size: .8rem; color: #6B7280; text-transform: uppercase; letter-spacing: .04em; }
+  button[data-baseweb="tab"] p { font-size: .95rem; font-weight: 600; }
+  div[data-testid="stVerticalBlockBorderWrapper"] { background: #FFFFFF; border-radius: 8px; }
+  section[data-testid="stSidebar"] { border-right: 1px solid #E5E7EB; }
 </style>
 """
 
 
-def badge(status):
-    label, colour = STATUS.get(status, (status, "gray"))
-    return f":{colour}-background[{label}]"
+def esc(value) -> str:
+    return html.escape("" if value is None else str(value))
+
+
+def tag(label: str, strong=False) -> str:
+    return f'<span class="rs-tag{" strong" if strong else ""}">{esc(label)}</span>'
+
+
+def notice(title: str, lines=(), dark=False):
+    """Neutral message box. Everything inside is escaped."""
+    items = "".join(f"<li>{esc(l)}</li>" for l in lines)
+    st.markdown(f'<div class="rs-notice{" dark" if dark else ""}"><b>{esc(title)}</b>'
+                + (f"<ul>{items}</ul>" if items else "") + "</div>", unsafe_allow_html=True)
+
+
+def step(n, title):
+    st.markdown(f'<div class="rs-step">STEP {n}</div>', unsafe_allow_html=True)
+    st.markdown(f"**{title}**")
 
 
 def describe(action):
@@ -64,48 +92,136 @@ def describe(action):
     return plain(inp.get("reason", ""))
 
 
-def step(n, title):
-    st.markdown(f'<div class="rs-step">STEP {n}</div>', unsafe_allow_html=True)
-    st.markdown(f"**{title}**")
-
-
-st.set_page_config(page_title="Restock Agent", page_icon="💊", layout="wide")
+st.set_page_config(page_title="Restock Agent", layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
 conn = db.connect()
+auth.ensure_schema(conn)
 if conn.execute("SELECT COUNT(*) FROM medicines").fetchone()[0] == 0:
     seed(conn)
 
+# ---------------- Sign-in ----------------
+user = st.session_state.get("user")
+if user and time.time() - st.session_state.get("last_seen", 0) > IDLE_MINUTES * 60:
+    db.log(conn, user["username"], "signed out (idle timeout)")
+    conn.commit()
+    st.session_state.clear()
+    st.session_state["flash_login"] = f"You were signed out after {IDLE_MINUTES} minutes without activity."
+    user = None
+
+if not user:
+    _, mid, _ = st.columns([1, 1.1, 1])
+    with mid:
+        st.write("")
+        st.markdown('<div class="rs-brand">RESTOCK AGENT <span>· Pharmacy operations</span></div>', unsafe_allow_html=True)
+        if "flash_login" in st.session_state:
+            notice(st.session_state.pop("flash_login"))
+        if not auth.has_users(conn):
+            st.markdown("### Create the administrator account")
+            st.caption("No accounts exist yet. This first account can add other pharmacists.")
+            with st.form("first_user"):
+                full = st.text_input("Full name")
+                uname = st.text_input("Username")
+                pw = st.text_input("Password", type="password", help=f"At least {auth.MIN_PASSWORD} characters.")
+                pw2 = st.text_input("Confirm password", type="password")
+                if st.form_submit_button("Create account", type="primary", use_container_width=True):
+                    try:
+                        if pw != pw2:
+                            raise auth.AuthError("The two passwords don't match.")
+                        auth.create_user(conn, uname, full, pw, is_admin=True)
+                        st.session_state["flash_login"] = "Account created. Sign in to continue."
+                        st.rerun()
+                    except auth.AuthError as e:
+                        notice(str(e), dark=True)
+        else:
+            st.markdown("### Sign in")
+            with st.form("login"):
+                uname = st.text_input("Username")
+                pw = st.text_input("Password", type="password")
+                if st.form_submit_button("Sign in", type="primary", use_container_width=True):
+                    try:
+                        st.session_state["user"] = auth.authenticate(conn, uname, pw)
+                        st.session_state["last_seen"] = time.time()
+                        st.rerun()
+                    except auth.AuthError as e:
+                        notice(str(e), dark=True)
+        st.caption("Access is limited to pharmacy staff. All activity is recorded.")
+    st.stop()
+
+st.session_state["last_seen"] = time.time()
+# The approving pharmacist is the signed-in account, not a typed name.
+pharmacist = f"{user['full_name']} ({user['username']})"
+
 # ---------------- Sidebar ----------------
 with st.sidebar:
-    st.markdown("### 💊 Restock Agent")
+    st.markdown('<div class="rs-brand">RESTOCK AGENT</div>', unsafe_allow_html=True)
     st.caption("Demo Pharmacy · fictional data")
-    pharmacist = st.text_input("Pharmacist on duty", key="pharmacist", placeholder="Your name")
-    if pharmacist:
-        st.success(f"On duty: {plain(pharmacist, 60)}")
-    else:
-        st.warning("Enter your name to approve orders or receive deliveries.")
+    st.markdown(f"Signed in as **{plain(user['full_name'], 60)}**  \n`{plain(user['username'], 40)}`"
+                + ("  · administrator" if user["is_admin"] else ""))
+    if st.button("Sign out", use_container_width=True):
+        db.log(conn, user["username"], "signed out")
+        conn.commit()
+        st.session_state.clear()
+        st.rerun()
+    st.divider()
+    with st.expander("Change password"):
+        with st.form("change_pw", clear_on_submit=True):
+            cur = st.text_input("Current password", type="password")
+            new = st.text_input("New password", type="password")
+            new2 = st.text_input("Confirm new password", type="password")
+            if st.form_submit_button("Update password"):
+                try:
+                    if new != new2:
+                        raise auth.AuthError("The two new passwords don't match.")
+                    auth.change_password(conn, user["id"], cur, new)
+                    notice("Password updated.")
+                except auth.AuthError as e:
+                    notice(str(e), dark=True)
+    if user["is_admin"]:
+        with st.expander("Manage accounts"):
+            for u in auth.list_users(conn):
+                c1, c2 = st.columns([3, 2], vertical_alignment="center")
+                c1.markdown(f"**{plain(u['full_name'], 40)}**  \n`{plain(u['username'], 32)}`"
+                            + (" · admin" if u["is_admin"] else "") + ("" if u["active"] else " · inactive"))
+                if u["id"] != user["id"]:
+                    if c2.button("Deactivate" if u["active"] else "Activate", key=f"act{u['id']}"):
+                        try:
+                            auth.set_active(conn, u["id"], not u["active"], user["username"])
+                            st.rerun()
+                        except auth.AuthError as e:
+                            notice(str(e), dark=True)
+            st.markdown("**Add an account**")
+            with st.form("add_user", clear_on_submit=True):
+                full = st.text_input("Full name")
+                uname = st.text_input("Username")
+                pw = st.text_input("Temporary password", type="password")
+                admin = st.checkbox("Administrator")
+                if st.form_submit_button("Add account"):
+                    try:
+                        auth.create_user(conn, uname, full, pw, is_admin=admin, actor=user["username"])
+                        notice(f"Account '{uname}' created.")
+                    except auth.AuthError as e:
+                        notice(str(e), dark=True)
     st.divider()
     st.markdown("**How it works**")
     st.caption("1. The agent flags low or expiring stock.  \n2. You approve every order.  \n"
                "3. Upload the invoice: an exact match updates stock automatically.  \n"
                "4. If anything is wrong, the agent proposes a fix for you to approve.")
-    if DEMO_MODE:
+    if DEMO_MODE and user["is_admin"]:
         st.divider()
         st.markdown("**Demo controls**")
-        # Wipes everything (including the audit log), so it exists only in demo mode and needs a second click.
-        sure = st.checkbox("I want to erase all data", key="reset_sure")
+        # Wipes stock, orders and the audit log (accounts are kept), so it needs demo mode, an admin and a second click.
+        sure = st.checkbox("I want to erase all stock and order data", key="reset_sure")
         if st.button("Reset demo data", disabled=not sure):
             seed(conn)
+            db.log(conn, user["username"], "reset demo data")
+            conn.commit()
             st.session_state.pop("reset_sure", None)
             st.rerun()
 
 # ---------------- Header + KPIs ----------------
-st.markdown(
-    '<div class="rs-header"><div class="rs-logo">💊</div><div>'
-    '<p class="rs-title">Restock Agent</p>'
-    f'<p class="rs-sub">Stock alerts, supplier orders and invoice checks · {date.today().strftime("%A %d %B %Y")}</p>'
-    "</div></div>", unsafe_allow_html=True)
-
+st.markdown('<p class="rs-title">Restock Agent</p>'
+            f'<p class="rs-sub">Stock alerts, supplier orders and invoice checks · {date.today().strftime("%A %d %B %Y")}</p>',
+            unsafe_allow_html=True)
 alerts = find_alerts(conn)
 counts = {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) n FROM orders GROUP BY status")}
 k1, k2, k3, k4 = st.columns(4)
@@ -116,27 +232,26 @@ k4.metric("Deliveries to review", counts.get("needs_review", 0))
 st.write("")
 
 tab_alerts, tab_orders, tab_receive, tab_stock, tab_log = st.tabs(
-    ["🔔  Alerts", "📝  Orders", "📦  Receive delivery", "📊  Stock", "🧾  Audit log"]
-)
+    ["Alerts", "Orders", "Receive delivery", "Stock", "Audit log"])
 
 # ---------------- Alerts ----------------
 with tab_alerts:
     st.subheader("Medicines that need attention")
     if not alerts:
-        st.success("Nothing is low or close to expiry.")
+        notice("Nothing is low or close to expiry.")
     picks = []
     for a in alerts:
         with st.container(border=True):
             c1, c2, c3 = st.columns([5, 2, 1.3], vertical_alignment="center")
-            tags = []
+            tags = ""
             if any(r.startswith("low stock") for r in a["reasons"]):
-                tags.append(":red-background[Low stock]")
+                tags += tag("Low stock", strong=True)
             if any("expire" in r for r in a["reasons"]):
-                tags.append(":orange-background[Expiring soon]")
-            c1.markdown(f"**{a['name']}** &nbsp; {' '.join(tags)}")
+                tags += tag("Expiring soon")
+            c1.markdown(f"<b>{esc(a['name'])}</b>{tags}", unsafe_allow_html=True)
             c1.caption(f"{'; '.join(a['reasons']).capitalize()} · Supplier: {a['supplier']}")
             if a["already_on_order"]:
-                c2.markdown(":blue-background[On an open order]")
+                c2.markdown(tag("On an open order"), unsafe_allow_html=True)
                 continue
             qty = c2.number_input("Order qty", min_value=0, value=int(a["suggested_qty"]), key=f"q{a['medicine_id']}",
                                   label_visibility="collapsed")
@@ -157,45 +272,40 @@ with tab_alerts:
         st.session_state["flash"] = f"Drafted order(s) {', '.join('#' + str(i) for i in ids)}. Review them in the Orders tab."
         st.rerun()
     if "flash" in st.session_state:
-        st.success(st.session_state.pop("flash"))
+        notice(st.session_state.pop("flash"))
 
 # ---------------- Orders ----------------
 with tab_orders:
     st.subheader("Supplier orders")
     all_orders = conn.execute("SELECT o.id, o.status FROM orders o WHERE o.status != 'cancelled' ORDER BY o.id DESC").fetchall()
     if not all_orders:
-        st.info("No orders yet. Draft one from the Alerts tab.")
+        notice("No orders yet. Draft one from the Alerts tab.")
     for o in all_orders:
         order, lines = db.order_with_lines(conn, o["id"])
-        icon = {"draft": "🟠", "pending_delivery": "🔵", "needs_review": "🔴", "received": "🟢"}.get(order["status"], "⚪")
-        label = STATUS.get(order["status"], (order["status"], ""))[0]
-        with st.expander(f"{icon}  Order #{order['id']}  ·  {order['supplier']}  ·  {label}",
-                         expanded=order["status"] == "draft"):
+        status = STATUS.get(order["status"], order["status"])
+        with st.expander(f"Order #{order['id']}  —  {order['supplier']}  —  {status}", expanded=order["status"] == "draft"):
             if order["status"] == "draft":
-                st.markdown(f"{badge('draft')} &nbsp; Review quantities, then approve to place the order.")
+                st.caption("Review the quantities, then approve to place the order.")
                 for l in lines:
                     new = st.number_input(l["name"], min_value=0, value=int(l["qty"]), key=f"ol{order['id']}_{l['medicine_id']}")
                     if new != l["qty"]:
-                        orders.update_line(conn, order["id"], l["medicine_id"], int(new), pharmacist or "unknown")
+                        orders.update_line(conn, order["id"], l["medicine_id"], int(new), pharmacist)
                         st.rerun()
                 st.text_area("Message to supplier (preview)", order["message"], height=200, disabled=True,
                              key=f"msg{order['id']}")
                 c1, c2, _ = st.columns([2, 1, 3])
-                # THE LOCK: the button is disabled without a name, and approve_order() re-checks in code.
-                if c1.button("✅ Approve and place order", key=f"ap{order['id']}", type="primary", disabled=not pharmacist):
+                # THE LOCK: only a signed-in pharmacist can approve, and approve_order() re-checks in code.
+                if c1.button("Approve and place order", key=f"ap{order['id']}", type="primary"):
                     try:
                         orders.approve_order(conn, order["id"], pharmacist)
                         st.rerun()
                     except Exception as e:
-                        st.error(str(e))
+                        notice(str(e), dark=True)
                 if c2.button("Cancel order", key=f"cx{order['id']}"):
-                    orders.cancel_order(conn, order["id"], pharmacist or "unknown")
+                    orders.cancel_order(conn, order["id"], pharmacist)
                     st.rerun()
-                if not pharmacist:
-                    st.caption("Enter your name in the sidebar to approve.")
             else:
-                st.markdown(f"{badge(order['status'])} &nbsp; Approved by **{plain(order['approved_by'], 60)}** "
-                            f"on {(order['approved_at'] or '?').replace('T', ' at ')}")
+                st.caption(f"Approved by {order['approved_by']} on {(order['approved_at'] or '?').replace('T', ' at ')}")
                 st.dataframe([{"Medicine": l["name"], "Quantity": l["qty"]} for l in lines], hide_index=True, width="stretch")
                 st.text_area("Message to send the supplier", orders.supplier_message(conn, order["id"]),
                              height=180, key=f"sm{order['id']}")
@@ -210,31 +320,28 @@ with tab_receive:
         "WHERE o.status IN ('pending_delivery', 'needs_review') ORDER BY o.id"
     ).fetchall()]
     if not waiting:
-        st.info("No orders are waiting for delivery. Approve an order first.")
+        notice("No orders are waiting for delivery. Approve an order first.")
     else:
         with st.container(border=True):
             step(1, "Which order arrived?")
             choice = st.selectbox("Order", waiting, label_visibility="collapsed",
-                                  format_func=lambda r: f"#{r['id']} · {r['supplier']} · {STATUS[r['status']][0]}")
+                                  format_func=lambda r: f"#{r['id']} — {r['supplier']} — {STATUS[r['status']]}")
             order, lines = db.order_with_lines(conn, choice["id"])
             st.dataframe([{"Medicine": l["name"], "Ordered": l["qty"]} for l in lines], hide_index=True, width="stretch")
         with st.container(border=True):
             step(2, "Check the boxes")
             confirmed = st.checkbox("I checked the boxes: the batch matches this order", key=f"bc{order['id']}")
-        ready = confirmed and bool(pharmacist)
         with st.container(border=True):
             step(3, "Upload the invoice")
             st.caption("The agent reads it, checks every line against the order, and updates stock if it matches exactly.")
             upload = st.file_uploader("Invoice photo or PDF", type=["jpg", "jpeg", "png", "webp", "pdf"],
-                                      disabled=not ready, key=f"up{order['id']}", label_visibility="collapsed")
-            if not pharmacist:
-                st.caption("Enter your name in the sidebar first.")
-            elif not confirmed:
+                                      disabled=not confirmed, key=f"up{order['id']}", label_visibility="collapsed")
+            if not confirmed:
                 st.caption("Tick step 2 to unlock the upload.")
 
         # A new upload is processed once: read -> check -> stock updated on an exact match, else flagged.
         file_key = f"{order['id']}:{upload.file_id}" if upload is not None else None
-        if upload is not None and ready and st.session_state.get("processed") != file_key:
+        if upload is not None and confirmed and st.session_state.get("processed") != file_key:
             st.session_state["processed"] = file_key
             catalog = [r["name"] for r in conn.execute("SELECT name FROM medicines ORDER BY name")]
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(upload.name).suffix) as f:
@@ -252,7 +359,7 @@ with tab_receive:
                 }
                 if not result.get("applied"):
                     # Something is wrong: the agent decides what should happen next.
-                    with st.spinner("🤖 The agent is working out what to do next..."):
+                    with st.spinner("The agent is working out what to do next..."):
                         rec["plan"] = plan_followup(conn, order["id"], res.data, result["issues"]).to_dict()
                 st.session_state["receipt"] = rec
             st.rerun()
@@ -263,8 +370,8 @@ with tab_receive:
         st.write("")
         with st.container(border=True):
             if rec.get("error"):
-                st.error(f"Order #{rec['order_id']}: could not read the invoice. {plain(rec['error'])}")
-                if st.button("🔄 Try again", type="primary", key="retry_read"):
+                notice(f"Order #{rec['order_id']}: the invoice could not be read.", [rec["error"]], dark=True)
+                if st.button("Try again", type="primary", key="retry_read"):
                     st.session_state.pop("processed", None)  # lets the same uploaded file be read again
                     st.session_state.pop("receipt", None)
                     st.rerun()
@@ -277,34 +384,30 @@ with tab_receive:
                                "Batch": l["batch_no"], "Expiry": l["expiry"], "Qty": l["qty"]}
                               for l in inv.get("lines", [])], hide_index=True, width="stretch")
                 if result.get("applied"):
-                    added = ", ".join(plain(f"{r['name']} +{r['qty']}") for r in result["receive"])
-                    st.success(f"✅ **Invoice matches the order.** Stock updated automatically: {added}.")
+                    notice("Invoice matches the order. Stock updated automatically.",
+                           [f"{r['name']}: +{r['qty']} (batch {r['batch_no']})" for r in result["receive"]])
                 else:
-                    st.error("⚠️ **The invoice does not match the order.** Nothing has been changed yet.")
-                    for i in result["issues"]:
-                        st.markdown(f"- **{i['type'].replace('_', ' ').capitalize()}**: {plain(i['detail'])}")
+                    notice("The invoice does not match the order. Nothing has been changed yet.",
+                           [f"{i['type'].replace('_', ' ').capitalize()}: {i['detail']}" for i in result["issues"]], dark=True)
                     still_open = conn.execute("SELECT status FROM orders WHERE id = ?", (rec["order_id"],)).fetchone()
                     is_open = still_open and still_open["status"] == "needs_review"
                     plan = rec.get("plan")
                     if rec.get("done"):
                         d = rec["done"]
-                        st.success("✅ **Approved plan carried out.**")
-                        if d["received"]:
-                            st.markdown("**Added to stock:** " + ", ".join(plain(f"{i['name']} +{i['qty']}") for i in d["received"]))
-                        if d["held"]:
-                            st.markdown("**Set aside:** " + ", ".join(plain(f"{i['name']} × {i['qty']}") for i in d["held"]))
-                        if d["reorders"]:
-                            st.markdown("**Draft re-order(s) created:** " + ", ".join(f"#{o}" for o in d["reorders"])
-                                        + " (approve them in the Orders tab)")
+                        lines_done = [f"Added to stock: {i['name']} +{i['qty']}" for i in d["received"]]
+                        lines_done += [f"Set aside: {i['name']} × {i['qty']}" for i in d["held"]]
+                        lines_done += [f"Draft re-order #{o} created (approve it in Orders)" for o in d["reorders"]]
+                        notice("Approved plan carried out.", lines_done)
                         for m in d["messages"]:
                             st.text_area("Message to send the supplier", m, height=200, key="sent_msg")
                     elif plan and is_open:
                         st.divider()
-                        st.markdown("#### 🤖 The agent's plan")
+                        st.markdown("#### Proposed follow-up")
+                        st.caption("Prepared by the agent. Untick anything you don't want, then approve.")
                         if plan.get("error"):
-                            st.warning(plain(plan["error"]))
+                            notice(plan["error"], dark=True)
                         if plan.get("summary"):
-                            st.info(plain(plan["summary"]))
+                            notice(plan["summary"])
                         approved, questions = [], []
                         for a in plan.get("actions", []):
                             if a["tool"] == "ask_pharmacist":
@@ -318,31 +421,33 @@ with tab_receive:
                                              key=f"pm{rec['order_id']}_{a['id']}")
                         answers = {}
                         for q in questions:
-                            answers[q["input"]["question"]] = st.text_input(f"❓ {plain(q['input']['question'])}",
+                            answers[q["input"]["question"]] = st.text_input(f"Question: {plain(q['input']['question'])}",
                                                                             key=f"qa{rec['order_id']}_{q['id']}")
                         if plan.get("rejected"):
                             with st.expander(f"Proposals blocked by the safety rules ({len(plan['rejected'])})"):
                                 for r in plan["rejected"]:
                                     st.markdown(f"- {TOOL_LABELS.get(r['tool'], r['tool'])}: {plain(r['why'])}")
                         c1, c2, _ = st.columns([2, 2, 2])
-                        if c1.button("✅ Approve selected actions", type="primary", disabled=not pharmacist or not approved,
+                        if c1.button("Approve selected actions", type="primary", disabled=not approved,
                                      key=f"ok{rec['order_id']}"):
                             try:
                                 done = execute_plan(conn, rec["order_id"], plan, set(approved), pharmacist, inv,
                                                     result["issues"])
                                 st.session_state["receipt"] = {**rec, "done": done}
                             except (ValueError, PermissionError) as e:
-                                st.error(str(e))
+                                st.session_state["receipt"] = {**rec, "exec_error": str(e)}
                             st.rerun()
-                        if questions and c2.button("🔄 Re-plan with my answers", key=f"rp{rec['order_id']}",
+                        if questions and c2.button("Re-plan with my answers", key=f"rp{rec['order_id']}",
                                                    disabled=not any(answers.values())):
-                            with st.spinner("🤖 Re-planning..."):
+                            with st.spinner("Re-planning..."):
                                 new = plan_followup(conn, rec["order_id"], inv, result["issues"],
                                                     answers={k: v for k, v in answers.items() if v}).to_dict()
                             st.session_state["receipt"] = {**rec, "plan": new}
                             st.rerun()
+                        if rec.get("exec_error"):
+                            notice(rec["exec_error"], dark=True)
                         st.caption(f"Agent: {plan.get('turns', 0)} step(s) · ${plan.get('cost_usd', 0):.4f}")
-                    if is_open and pharmacist and not rec.get("done"):
+                    if is_open and not rec.get("done"):
                         with st.expander("Other options"):
                             if st.button("Accept the whole delivery as invoiced", key=f"acc{rec['order_id']}"):
                                 res2 = receive_delivery(conn, rec["order_id"], inv, pharmacist, True, accept_discrepancies=True)
@@ -374,8 +479,8 @@ with tab_stock:
 # ---------------- Audit log ----------------
 with tab_log:
     st.subheader("Audit log")
-    st.caption("Everything the agent and pharmacists did, newest first.")
-    rows = conn.execute("SELECT at, actor, action, details FROM audit_log ORDER BY id DESC LIMIT 200").fetchall()
+    st.caption("Everything the agent and staff did, newest first.")
+    rows = conn.execute("SELECT at, actor, action, details FROM audit_log ORDER BY id DESC LIMIT 300").fetchall()
     st.dataframe([{"When": r["at"].replace("T", " "), "Who": r["actor"], "What": r["action"], "Details": r["details"] or ""}
                   for r in rows], hide_index=True, width="stretch",
                  column_config={"Details": st.column_config.TextColumn(width="large")})

@@ -41,7 +41,10 @@ Re-orders it drafts still need approval in the Orders tab. It never runs on an i
 - **Uploads are limited**: 10 MB, real images/PDFs only, no "decompression bomb" images over 50 megapixels.
 - **Reset is locked.** "Reset demo data" (which also clears the audit log) only exists with `PHARMA_DEMO=1` and needs a confirmation tick.
 - **Pinned dependencies** in `requirements.txt`.
-- **Not done yet:** real logins. "Pharmacist on duty" is a typed name, so the approval lock relies on who can use this computer.
+- **Staff accounts.** Everyone signs in; approvals are recorded under the signed-in account. Passwords are stored only
+  as salted scrypt hashes, must be 8+ characters, and 5 wrong attempts lock the account for 5 minutes. Sessions end
+  after 30 minutes without activity. Logins, failures, lockouts and account changes are in the audit log.
+  Administrators add or deactivate accounts (the last administrator can't be removed) (`pharmacy/auth.py`).
 - **Audit log.** Every agent and human action is recorded, with who did it.
 - The app only listens on `localhost`.
 
@@ -51,9 +54,12 @@ Re-orders it drafts still need approval in the Orders tab. It never runs on an i
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env        # then paste your ANTHROPIC_API_KEY into .env
+copy .env.example .env        # then add your API key (or run scripts\set_key.ps1)
 streamlit run app.py
 ```
+
+The first time it opens, it asks you to create the administrator account. Administrators add other pharmacists
+from the sidebar (**Manage accounts**), or from the command line with `python scripts/add_user.py`.
 
 ## Prove it: 20 cases
 
