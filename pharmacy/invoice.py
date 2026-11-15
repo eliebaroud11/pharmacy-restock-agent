@@ -38,6 +38,8 @@ PRICES = {
     # Same models through OpenRouter (their listed prices; free models cost nothing)
     "anthropic/claude-haiku-5.5": (0.10, 0.50),
     "anthropic/claude-sonnet-5.5": (2.00, 10.00),
+    "google/gemini-3.1-flash-lite": (0.25, 1.50),
+    "deepseek/deepseek-v4.1-flash": (0.05, 0.20),
 }
 
 
