@@ -1,5 +1,5 @@
 """Pharmacist screen. Run with:  streamlit run app.py"""
-import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -20,15 +20,21 @@ TOOL_LABELS = {"receive_items": "📥 Add to stock", "hold_items": "⏸️ Set a
 
 
 def describe(action):
+    """One-line description of an agent action. All AI-written text is escaped (shown as plain text)."""
     inp = action["input"]
     if action["tool"] in ("receive_items", "hold_items", "draft_reorder"):
-        items = "; ".join(f"{i.get('name')} × {i.get('qty')}" + (f" (batch {i['batch_no']})" if i.get("batch_no") else "")
+        items = "; ".join(plain(f"{i.get('name')} × {i.get('qty')}" + (f" (batch {i['batch_no']})" if i.get("batch_no") else ""))
                           for i in inp.get("items", []))
-        return f"{items}. _{inp.get('reason', '')}_"
+        return f"{items}. {plain(inp.get('reason', ''))}"
     if action["tool"] == "ask_pharmacist":
-        return inp.get("question", "")
-    return f"_{inp.get('reason', '')}_"
+        return plain(inp.get("question", ""))
+    return plain(inp.get("reason", ""))
+
+
+from pharmacy.safe import plain  # noqa: E402
 from pharmacy.seed import seed  # noqa: E402
+
+DEMO_MODE = os.environ.get("PHARMA_DEMO", "") == "1"
 
 st.set_page_config(page_title="Pharmacy Restock Agent", page_icon="💊", layout="wide")
 conn = db.connect()
@@ -38,11 +44,14 @@ with st.sidebar:
     pharmacist = st.text_input("Pharmacist on duty", key="pharmacist", placeholder="Your name")
     if not pharmacist:
         st.warning("Enter your name to approve orders or receive deliveries.")
-    st.divider()
-    if st.button("Reset demo data"):
-        seed(conn)
-        st.success("Demo data reset.")
-        st.rerun()
+    if DEMO_MODE:
+        st.divider()
+        # Wipes everything (including the audit log), so it exists only in demo mode and needs a second click.
+        sure = st.checkbox("I want to erase all data", key="reset_sure")
+        if st.button("Reset demo data", disabled=not sure):
+            seed(conn)
+            st.session_state.pop("reset_sure", None)
+            st.rerun()
 
 if conn.execute("SELECT COUNT(*) FROM medicines").fetchone()[0] == 0:
     seed(conn)
@@ -171,24 +180,24 @@ with tab_receive:
     if rec:
         st.divider()
         if rec.get("error"):
-            st.error(f"Order #{rec['order_id']}: could not read the invoice. {rec['error']}")
+            st.error(f"Order #{rec['order_id']}: could not read the invoice. {plain(rec['error'])}")
             if st.button("🔄 Try again", type="primary", key="retry_read"):
                 st.session_state.pop("processed", None)  # lets the same uploaded file be read again
                 st.session_state.pop("receipt", None)
                 st.rerun()
         else:
             inv, result = rec["invoice"], rec["result"]
-            st.markdown(f"**Order #{rec['order_id']} · invoice {inv.get('invoice_number') or '?'}** from "
-                        f"{inv.get('supplier_name') or '?'}, dated {inv.get('invoice_date') or '?'}")
+            st.markdown(f"**Order #{rec['order_id']} · invoice {plain(inv.get('invoice_number') or '?')}** from "
+                        f"{plain(inv.get('supplier_name') or '?')}, dated {plain(inv.get('invoice_date') or '?')}")
             st.table([{"Item": l["product_name"], "Matched to": l["catalog_match"], "Batch": l["batch_no"],
                        "Expiry": l["expiry"], "Qty": l["qty"]} for l in inv.get("lines", [])])
             if result.get("applied"):
-                added = ", ".join(f"{r['name']} +{r['qty']}" for r in result["receive"])
+                added = ", ".join(plain(f"{r['name']} +{r['qty']}") for r in result["receive"])
                 st.success(f"✅ Invoice matches the order. Stock updated automatically: {added}.")
             else:
                 st.error("⚠️ The invoice does not match the order. Nothing has been changed yet.")
                 for i in result["issues"]:
-                    st.markdown(f"- **{i['type'].replace('_', ' ')}**: {i['detail']}")
+                    st.markdown(f"- **{i['type'].replace('_', ' ')}**: {plain(i['detail'])}")
                 still_open = conn.execute("SELECT status FROM orders WHERE id = ?", (rec["order_id"],)).fetchone()
                 is_open = still_open and still_open["status"] == "needs_review"
                 plan = rec.get("plan")
@@ -196,9 +205,9 @@ with tab_receive:
                     d = rec["done"]
                     st.success("✅ Approved plan carried out.")
                     if d["received"]:
-                        st.markdown("**Added to stock:** " + ", ".join(f"{i['name']} +{i['qty']}" for i in d["received"]))
+                        st.markdown("**Added to stock:** " + ", ".join(plain(f"{i['name']} +{i['qty']}") for i in d["received"]))
                     if d["held"]:
-                        st.markdown("**Set aside:** " + ", ".join(f"{i['name']} × {i['qty']}" for i in d["held"]))
+                        st.markdown("**Set aside:** " + ", ".join(plain(f"{i['name']} × {i['qty']}") for i in d["held"]))
                     if d["reorders"]:
                         st.markdown("**Draft re-order(s) created:** " + ", ".join(f"#{o}" for o in d["reorders"])
                                     + " (approve them in the Orders tab)")
@@ -207,9 +216,9 @@ with tab_receive:
                 elif plan and is_open:
                     st.subheader("🤖 The agent's plan")
                     if plan.get("error"):
-                        st.warning(plan["error"])
+                        st.warning(plain(plan["error"]))
                     if plan.get("summary"):
-                        st.info(plan["summary"])
+                        st.info(plain(plan["summary"]))
                     approved, questions = [], []
                     for a in plan.get("actions", []):
                         if a["tool"] == "ask_pharmacist":
@@ -223,12 +232,12 @@ with tab_receive:
                                          key=f"pm{rec['order_id']}_{a['id']}")
                     answers = {}
                     for q in questions:
-                        answers[q["input"]["question"]] = st.text_input(f"❓ {q['input']['question']}",
+                        answers[q["input"]["question"]] = st.text_input(f"❓ {plain(q['input']['question'])}",
                                                                         key=f"qa{rec['order_id']}_{q['id']}")
                     if plan.get("rejected"):
                         with st.expander(f"Proposals blocked by the safety rules ({len(plan['rejected'])})"):
                             for r in plan["rejected"]:
-                                st.markdown(f"- {TOOL_LABELS.get(r['tool'], r['tool'])}: {r['why']}")
+                                st.markdown(f"- {TOOL_LABELS.get(r['tool'], r['tool'])}: {plain(r['why'])}")
                     st.caption(f"Agent: {plan.get('turns', 0)} step(s) · ${plan.get('cost_usd', 0):.4f}")
                     c1, c2 = st.columns(2)
                     if c1.button("✅ Approve selected actions", type="primary", disabled=not pharmacist or not approved,
@@ -262,11 +271,10 @@ with tab_receive:
 # ---------------- Stock ----------------
 with tab_stock:
     st.subheader("Current stock")
-    st.dataframe([dict(r) for r in db.stock_summary(conn)], use_container_width=True, hide_index=True)
+    st.dataframe([dict(r) for r in db.stock_summary(conn)], width="stretch", hide_index=True)
 
 # ---------------- Audit log ----------------
 with tab_log:
     st.subheader("Everything the agent and pharmacists did")
     rows = conn.execute("SELECT at, actor, action, details FROM audit_log ORDER BY id DESC LIMIT 200").fetchall()
-    st.dataframe([{**dict(r), "details": json.loads(r["details"]) if r["details"] else ""} for r in rows],
-                 use_container_width=True, hide_index=True)
+    st.dataframe([{**dict(r), "details": r["details"] or ""} for r in rows], width="stretch", hide_index=True)

@@ -1,5 +1,6 @@
-anthropic>=1.0
-openai>=1.0
-streamlit>=1.40
-python-dotenv>=1.0
-pillow>=10.0
+# Pinned to the versions this project was built and tested with.
+anthropic==2.8.0
+openai==3.51.0
+streamlit==1.67.0
+python-dotenv==1.2.4
+pillow==13.0.0

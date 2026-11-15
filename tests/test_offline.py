@@ -147,7 +147,36 @@ def test_agent_never_runs_on_suspicious_invoice():
         pass
 
 
+def test_untrusted_text_is_shown_plain():
+    from pharmacy.safe import plain
+    evil = "Paracetamol ![x](http://evil.example/p.png) [click](http://evil.example) <b>hi</b>\nnew line"
+    out = plain(evil)
+    assert "![x](" not in out and "[click](" not in out and "<b>" not in out and "\n" not in out
+    assert out.replace("\\", "").startswith("Paracetamol")
+
+
+def test_bad_uploads_are_refused():
+    import tempfile
+    from PIL import Image
+    from pharmacy.invoice import InvoiceFileError, image_bytes
+    d = Path(tempfile.mkdtemp())
+    fake = d / "invoice.jpg"
+    fake.write_bytes(b"not an image at all")
+    huge = d / "huge.png"
+    Image.new("1", (9000, 9000)).save(huge)  # 81 megapixels, tiny file
+    fakepdf = d / "x.pdf"
+    fakepdf.write_bytes(b"<html>")
+    for f in (fake, huge, fakepdf):
+        try:
+            image_bytes(f)
+            raise AssertionError(f"{f.name} should be refused")
+        except InvoiceFileError:
+            pass
+
+
 if __name__ == "__main__":
+    test_untrusted_text_is_shown_plain()
+    test_bad_uploads_are_refused()
     test_agent_guard_blocks_bad_proposals()
     test_agent_never_runs_on_suspicious_invoice()
     test_fallback_matching()

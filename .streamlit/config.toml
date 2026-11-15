@@ -2,6 +2,8 @@
 # Only reachable from this computer. Change to 0.0.0.0 only on a trusted network.
 address = "localhost"
 headless = true
+# Invoice photos are a few MB at most; refuse anything bigger.
+maxUploadSize = 10
 
 [browser]
 gatherUsageStats = false

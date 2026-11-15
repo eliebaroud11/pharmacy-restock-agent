@@ -36,7 +36,12 @@ Re-orders it drafts still need approval in the Orders tab. It never runs on an i
 ### Security ("Secure and in control")
 - **The lock is in code, not in a prompt.** `approve_order()` needs a named pharmacist; `supplier_message()` refuses unapproved orders; `receive_delivery()` needs batch confirmation and refuses to add stock on any mismatch unless a pharmacist accepts it.
 - **Prompt injection.** The invoice is treated as untrusted data. Claude has no tools and can only return a fixed JSON schema. Text on an invoice addressed to an AI is flagged and the delivery goes to human review (see test case `synthetic_19`).
-- **Keys.** The API key lives in `.env`, which is git-ignored.
+- **Keys.** The API key lives in `.env`, which is git-ignored (git history checked: no key ever committed).
+- **Untrusted text is shown as plain text.** Invoice content and AI output are escaped, so an invoice can't put links or remote images on screen (`pharmacy/safe.py`).
+- **Uploads are limited**: 10 MB, real images/PDFs only, no "decompression bomb" images over 50 megapixels.
+- **Reset is locked.** "Reset demo data" (which also clears the audit log) only exists with `PHARMA_DEMO=1` and needs a confirmation tick.
+- **Pinned dependencies** in `requirements.txt`.
+- **Not done yet:** real logins. "Pharmacist on duty" is a typed name, so the approval lock relies on who can use this computer.
 - **Audit log.** Every agent and human action is recorded, with who did it.
 - The app only listens on `localhost`.
 

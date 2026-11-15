@@ -107,29 +107,45 @@ def _schema(catalog_names):
 
 
 MAX_SIDE = 1600  # px. Plenty for printed text; a 12-megapixel phone photo is ~4000 px.
+MAX_BYTES = 10 * 1024 * 1024
+MAX_PIXELS = 50_000_000  # a 50-megapixel image is already far bigger than any phone photo
+
+
+class InvoiceFileError(ValueError):
+    pass
 
 
 def image_bytes(path: Path):
     """Return (bytes, media_type), shrinking big photos and fixing phone rotation. PDFs pass through."""
+    import io
+
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
     media_type = MEDIA_TYPES.get(path.suffix.lower())
     if media_type is None:
-        raise ValueError(f"Unsupported file type: {path.suffix}")
+        raise InvoiceFileError(f"Unsupported file type: {path.suffix}. Upload a JPG, PNG, WEBP or PDF.")
+    if path.stat().st_size > MAX_BYTES:
+        raise InvoiceFileError("File is larger than 10 MB. Take a smaller photo.")
     raw = path.read_bytes()
     if media_type == "application/pdf":
+        if not raw.startswith(b"%PDF"):
+            raise InvoiceFileError("This file is not a real PDF.")
         return raw, media_type
+    Image.MAX_IMAGE_PIXELS = MAX_PIXELS
     try:
-        import io
-
-        from PIL import Image, ImageOps
-        img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
+        img = Image.open(io.BytesIO(raw))
+        if img.width * img.height > MAX_PIXELS:
+            raise InvoiceFileError("Image is too large (over 50 megapixels).")
+        img = ImageOps.exif_transpose(img)
         if max(img.size) <= MAX_SIDE and len(raw) < 1_500_000:
             return raw, media_type
         img.thumbnail((MAX_SIDE, MAX_SIDE))
         buf = io.BytesIO()
         img.convert("RGB").save(buf, "JPEG", quality=85)
         return buf.getvalue(), "image/jpeg"
-    except Exception:
-        return raw, media_type  # unreadable by Pillow: send as-is
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError) as e:
+        # Never send a file we can't open as an image.
+        raise InvoiceFileError("This file isn't a readable image.") from e
 
 
 def _content_block(path: Path):
@@ -142,7 +158,10 @@ def _content_block(path: Path):
 def read_invoice(path, catalog_names, client=None, model: str = MODEL) -> InvoiceResult:
     """Read an invoice, then let deterministic code fix any product the model failed to match."""
     from .matching import fill_matches
-    res = _read_raw(path, catalog_names, client=client, model=model)
+    try:
+        res = _read_raw(path, catalog_names, client=client, model=model)
+    except InvoiceFileError as e:
+        return InvoiceResult(data={}, model=model, error=str(e))
     if not res.error and catalog_names:
         fill_matches(res.data, catalog_names)
     return res
