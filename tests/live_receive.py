@@ -45,6 +45,16 @@ def run(case_name):
     print(f"  applied={result['applied']}  order status={status}  stock change={changed}")
     for i in result["issues"]:
         print(f"  issue: {i['type']} - {i['detail']}")
+    if not result["applied"]:
+        from pharmacy.agent import execute_plan, plan_followup
+        plan = plan_followup(conn, oid, res.data, result["issues"], today=today).to_dict()
+        print(f"  agent plan: {[a['tool'] for a in plan['actions']]}  ({plan['summary'][:90]})")
+        done = execute_plan(conn, oid, plan, {a["id"] for a in plan["actions"]}, "Test Pharmacist",
+                            res.data, result["issues"], today=today)
+        after2 = {r["name"]: r["qty"] for r in db.stock_summary(conn)}
+        print(f"  after approval: stock change={ {n: after2[n] - before[n] for n in after2 if after2[n] != before[n]} }"
+              f"  re-orders={done['reorders']}  status={db.order_with_lines(conn, oid)[0]['status']}")
+        assert done["received"] and done["messages"], "approved plan should add the good items and draft a message"
     return result, changed, status
 
 

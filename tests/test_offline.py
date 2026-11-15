@@ -110,7 +110,46 @@ def test_fallback_matching():
     assert inv["lines"][1]["catalog_match"] == "Ibuprofen 400mg tabs (20)"  # implausible AI match corrected
 
 
+def test_agent_guard_blocks_bad_proposals():
+    """Even if the AI misbehaves, code refuses unsafe actions."""
+    from pharmacy.agent import Guard
+    ctx = {"min_expiry": "2027-05-13", "pharmacist_answers": {},
+           "catalog": ["Paracetamol 500mg tabs (24)", "Ibuprofen 400mg tabs (20)", "Cetirizine 10mg tabs (20)"],
+           "order_lines": [{"name": "Paracetamol 500mg tabs (24)", "qty": 20}, {"name": "Ibuprofen 400mg tabs (20)", "qty": 10}],
+           "invoice_lines": [
+               {"product_name": "PARA", "catalog_match": "Paracetamol 500mg tabs (24)", "batch_no": "P1", "expiry": "2028-01-31", "qty": 16},
+               {"product_name": "IBU", "catalog_match": "Ibuprofen 400mg tabs (20)", "batch_no": "I1", "expiry": "2027-01-31", "qty": 10},
+               {"product_name": "CET", "catalog_match": "NONE", "batch_no": "C1", "expiry": "2028-01-31", "qty": 5}]}
+    g = Guard(ctx)
+    item = lambda n, b, e, q: {"items": [{"name": n, "batch_no": b, "expiry": e, "qty": q}], "reason": ""}  # noqa: E731
+    assert g.check("receive_items", item("Cetirizine 10mg tabs (20)", "C1", "2028-01-31", 5))        # not ordered
+    assert g.check("receive_items", item("Ibuprofen 400mg tabs (20)", "I1", "2027-01-31", 10))       # short-dated
+    assert g.check("receive_items", item("Paracetamol 500mg tabs (24)", "P1", "2028-01-31", 20))     # more than invoiced
+    assert g.check("receive_items", item("Paracetamol 500mg tabs (24)", "FAKE", "2028-01-31", 5))    # batch not on invoice
+    assert g.check("draft_reorder", {"items": [{"name": "Aspirin", "qty": 5}], "reason": ""})         # not in catalog
+    assert g.check("draft_reorder", {"items": [{"name": "Paracetamol 500mg tabs (24)", "qty": 999}], "reason": ""})
+    assert g.check("receive_items", item("Paracetamol 500mg tabs (24)", "P1", "2028-01-31", 16)) is None  # the correct one
+    assert g.check("receive_items", item("Paracetamol 500mg tabs (24)", "P1", "2028-01-31", 1))      # can't receive twice
+
+
+def test_agent_never_runs_on_suspicious_invoice():
+    from pharmacy.agent import execute_plan, plan_followup
+    conn = db.connect(":memory:")
+    seed(conn, today=TODAY)
+    issues = [{"type": "suspicious_text", "detail": "note to AI"}]
+    plan = plan_followup(conn, 1, {"lines": []}, issues, today=TODAY)
+    assert plan.error and not plan.actions
+    try:
+        execute_plan(conn, 1, {"actions": [{"id": 1, "tool": "receive_items", "input": {"items": []}}]}, {1},
+                     "Demo Pharmacist", {"lines": []}, issues, today=TODAY)
+        raise AssertionError("executed a plan for a suspicious invoice")
+    except PermissionError:
+        pass
+
+
 if __name__ == "__main__":
+    test_agent_guard_blocks_bad_proposals()
+    test_agent_never_runs_on_suspicious_invoice()
     test_fallback_matching()
     test_reconcile_matches_expected_for_every_case()
     test_full_flow_and_lock()

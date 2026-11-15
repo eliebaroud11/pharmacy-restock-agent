@@ -23,8 +23,15 @@ An AI agent that runs a community pharmacy's restocking loop from start to finis
 | Match products to stock | AI, with a code safety net (medicine name + strength) | `pharmacy/matching.py` |
 | Compare invoice to order | Code (no AI) | `pharmacy/reconcile.py` |
 | Add to stock | **Automatic as soon as the invoice is uploaded**, if it matches exactly; otherwise flagged and a pharmacist decides | `pharmacy/receive.py` |
+| **Decide what to do when a delivery is wrong** | **AI agent with tools** (add what's good, hold bad batches, re-order, message the supplier, ask the pharmacist) | `pharmacy/agent.py` |
+| Approve the agent's plan | Pharmacist ticks/unticks each action; code re-checks every rule before acting | `agent.execute_plan()` |
 
-AI is used only where it's needed (reading messy invoices). Every decision that changes money or stock is plain code with a human gate.
+### The follow-up agent
+When an invoice doesn't match its order, an AI agent works out the next steps in a tool-use loop. Its tools only
+**propose** actions; a code guard checks every proposal (never receive unordered, short-dated, unidentified or
+over-invoiced goods; re-orders only for catalog items) and tells the agent when one is refused so it can correct it.
+The pharmacist sees the plan, can answer the agent's questions and re-plan, and approves the actions they want.
+Re-orders it drafts still need approval in the Orders tab. It never runs on an invoice flagged for prompt injection.
 
 ### Security ("Secure and in control")
 - **The lock is in code, not in a prompt.** `approve_order()` needs a named pharmacist; `supplier_message()` refuses unapproved orders; `receive_delivery()` needs batch confirmation and refuses to add stock on any mismatch unless a pharmacist accepts it.
@@ -49,7 +56,8 @@ streamlit run app.py
 python eval/make_synthetic.py   # 20 synthetic placeholder invoices (until real ones are added)
 python eval/run_eval.py         # pass rate, humans needed, cost per run
 python tests/test_offline.py    # logic tests, no API calls
-python tests/live_receive.py    # end to end with the AI: clean invoice updates stock, short one doesn't
+python tests/live_receive.py    # end to end with the AI: clean invoice updates stock; short one -> agent plan -> approve
+python eval/run_agent_eval.py   # the agent's decisions on the 9 problem cases
 ```
 
 For rehearsing the demo, `python eval/make_demo_invoice.py <order id>` prints a fake invoice that matches an order
