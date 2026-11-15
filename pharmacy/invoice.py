@@ -99,11 +99,35 @@ def _schema(catalog_names):
     }
 
 
-def _content_block(path: Path):
+MAX_SIDE = 1600  # px. Plenty for printed text; a 12-megapixel phone photo is ~4000 px.
+
+
+def image_bytes(path: Path):
+    """Return (bytes, media_type), shrinking big photos and fixing phone rotation. PDFs pass through."""
     media_type = MEDIA_TYPES.get(path.suffix.lower())
     if media_type is None:
         raise ValueError(f"Unsupported file type: {path.suffix}")
-    data = base64.standard_b64encode(path.read_bytes()).decode("utf-8")
+    raw = path.read_bytes()
+    if media_type == "application/pdf":
+        return raw, media_type
+    try:
+        import io
+
+        from PIL import Image, ImageOps
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
+        if max(img.size) <= MAX_SIDE and len(raw) < 1_500_000:
+            return raw, media_type
+        img.thumbnail((MAX_SIDE, MAX_SIDE))
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, "JPEG", quality=85)
+        return buf.getvalue(), "image/jpeg"
+    except Exception:
+        return raw, media_type  # unreadable by Pillow: send as-is
+
+
+def _content_block(path: Path):
+    raw, media_type = image_bytes(path)
+    data = base64.standard_b64encode(raw).decode("utf-8")
     kind = "document" if media_type == "application/pdf" else "image"
     return {"type": kind, "source": {"type": "base64", "media_type": media_type, "data": data}}
 

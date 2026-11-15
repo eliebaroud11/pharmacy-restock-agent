@@ -10,7 +10,7 @@ from pathlib import Path
 
 import openai
 
-from .invoice import MEDIA_TYPES, InvoiceResult
+from .invoice import MEDIA_TYPES, InvoiceResult, image_bytes
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -68,7 +68,8 @@ def read_invoice_openrouter(path: Path, catalog_names, system: str, schema: dict
     media_type = MEDIA_TYPES.get(path.suffix.lower())
     if media_type is None or media_type == "application/pdf":
         return InvoiceResult(data={}, model=model, error="With OpenRouter, upload a photo (JPG/PNG), not a PDF.")
-    b64 = base64.standard_b64encode(path.read_bytes()).decode("utf-8")
+    raw, media_type = image_bytes(path)
+    b64 = base64.standard_b64encode(raw).decode("utf-8")
     prompt = ("Catalog products:\n" + "\n".join(f"- {n}" for n in catalog_names)
               + "\n\nExtract every line item from this invoice. Reply with only a JSON object matching this schema:\n"
               + json.dumps(schema))
@@ -79,16 +80,18 @@ def read_invoice_openrouter(path: Path, catalog_names, system: str, schema: dict
             {"type": "text", "text": prompt},
         ]},
     ]
+    # Reading a table needs no long "thinking"; turning it off makes reasoning models much faster.
+    extra = {"reasoning": {"enabled": False}} if os.environ.get("PHARMA_REASONING", "off") == "off" else {}
     try:
         client = _client()
         try:
             resp = client.chat.completions.create(
-                model=model, messages=messages, temperature=0,
+                model=model, messages=messages, temperature=0, extra_body=extra,
                 response_format={"type": "json_schema",
                                  "json_schema": {"name": "invoice", "strict": True, "schema": schema}},
             )
         except openai.BadRequestError:
-            # Some free models reject strict schemas; fall back to plain JSON mode.
+            # Some free models reject strict schemas or the reasoning switch; fall back to plain JSON mode.
             resp = client.chat.completions.create(
                 model=model, messages=messages, temperature=0, response_format={"type": "json_object"},
             )

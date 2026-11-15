@@ -222,7 +222,9 @@ def _loop_openrouter(ctx, guard, plan):
     nudged = False
     for _ in range(MAX_TURNS):
         plan.turns += 1
-        resp = client.chat.completions.create(model=AGENT_MODEL, messages=messages, tools=tools, temperature=0)
+        extra = {"reasoning": {"enabled": False}} if os.environ.get("PHARMA_AGENT_REASONING") == "off" else {}
+        resp = client.chat.completions.create(model=AGENT_MODEL, messages=messages, tools=tools, temperature=0,
+                                              extra_body=extra)
         msg = resp.choices[0].message
         calls = msg.tool_calls or []
         if not calls:

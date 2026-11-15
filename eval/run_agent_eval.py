@@ -7,6 +7,7 @@ Run:  python eval/run_agent_eval.py
 """
 import json
 import sys
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -101,10 +102,12 @@ def main():
         if case["expected"]["issue_types"] and case.get("verified") is not False:
             cases.append((cdir.name, case))
     print(f"Agent eval: {len(cases)} problem cases with {AGENT_MODEL}\n")
-    passed, cost, rejected = 0, 0.0, 0
+    passed, cost, rejected, secs = 0, 0.0, 0, []
     for name, case in cases:
         conn, oid, inv, issues, today = setup(case)
+        t0 = time.time()
         plan = plan_followup(conn, oid, inv, issues, today=today).to_dict()
+        secs.append(time.time() - t0)
         problems = grade(case, inv, plan, today)
         passed += not problems
         cost += plan["cost_usd"]
@@ -116,7 +119,7 @@ def main():
             print(f"        - {p}")
     n = len(cases)
     print(f"\nAgent pass rate: {passed}/{n} ({passed / n:.0%})   proposals blocked by rules: {rejected}   "
-          f"cost: ${cost:.4f}")
+          f"cost: ${cost:.4f}   avg time: {sum(secs) / len(secs):.1f}s")
 
 
 if __name__ == "__main__":

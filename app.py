@@ -172,6 +172,10 @@ with tab_receive:
         st.divider()
         if rec.get("error"):
             st.error(f"Order #{rec['order_id']}: could not read the invoice. {rec['error']}")
+            if st.button("🔄 Try again", type="primary", key="retry_read"):
+                st.session_state.pop("processed", None)  # lets the same uploaded file be read again
+                st.session_state.pop("receipt", None)
+                st.rerun()
         else:
             inv, result = rec["invoice"], rec["result"]
             st.markdown(f"**Order #{rec['order_id']} · invoice {inv.get('invoice_number') or '?'}** from "
@@ -252,6 +256,7 @@ with tab_receive:
             st.caption(rec["meta"])
         if st.button("Clear", key="clear_receipt"):
             st.session_state.pop("receipt", None)
+            st.session_state.pop("processed", None)
             st.rerun()
 
 # ---------------- Stock ----------------
